@@ -1,0 +1,56 @@
+# Test Node Message Configuration
+# Simple test node for validating Nevil v3.0 framework
+
+node_name: "test_node"
+version: "1.0"
+description: "Simple test node for framework validation"
+
+# Topics this node publishes to
+publishes:
+  - topic: "test_output"
+    message_type: "TestMessage"
+    description: "Test messages published every few seconds"
+    schema:
+      message:
+        type: "string"
+        required: true
+        description: "Test message content"
+      counter:
+        type: "integer"
+        required: true
+        description: "Message counter"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Message timestamp"
+
+  - topic: "system_heartbeat"
+    message_type: "NodeHeartbeat"
+    description: "Node health heartbeat"
+    schema:
+      node_name:
+        type: "string"
+        required: true
+      status:
+        type: "string"
+        required: true
+      timestamp:
+        type: "float"
+        required: true
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "test_input"
+    message_type: "TestInput"
+    callback: "on_test_input"
+    description: "Test input messages"
+    schema:
+      command:
+        type: "string"
+        required: true
+        description: "Test command"
+
+# Node configuration
+configuration:
+  test_interval: 5.0  # seconds between test messages
+  max_messages: 10    # maximum messages to send (0 = unlimited)

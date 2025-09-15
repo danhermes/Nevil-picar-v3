@@ -1,0 +1,154 @@
+# AI Cognition Node Message Configuration
+# OpenAI GPT-powered AI cognition for intelligent conversation
+
+node_name: "ai_cognition"
+version: "1.0"
+description: "AI cognition node using OpenAI GPT for intelligent conversation and natural responses"
+
+# Topics this node publishes to
+publishes:
+  - topic: "text_response"
+    message_type: "TextResponse"
+    description: "AI-generated text responses using OpenAI GPT"
+    frequency: "on_demand"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Response text to be spoken"
+        max_length: 1000
+      voice:
+        type: "string"
+        required: false
+        description: "Suggested voice for TTS"
+        default: "onyx"
+      priority:
+        type: "integer"
+        required: false
+        description: "Response priority"
+        default: 100
+        min: 1
+        max: 1000
+      context_id:
+        type: "string"
+        required: false
+        description: "Conversation context identifier"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "system_mode"
+    message_type: "SystemMode"
+    description: "System mode changes initiated by AI"
+    frequency: "on_change"
+    schema:
+      mode:
+        type: "string"
+        required: true
+        description: "New system mode"
+        allowed: ["listening", "speaking", "thinking", "idle", "error"]
+      reason:
+        type: "string"
+        required: false
+        description: "Reason for mode change"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "robot_action"
+    message_type: "RobotAction"
+    description: "Movement and expression commands from AI responses"
+    frequency: "on_demand"
+    schema:
+      actions:
+        type: "array"
+        required: true
+        description: "List of action commands to execute"
+        items:
+          type: "string"
+      source_text:
+        type: "string"
+        required: true
+        description: "Original user command that triggered actions"
+      mood:
+        type: "string"
+        required: false
+        description: "Current AI mood affecting actions"
+        default: "neutral"
+      priority:
+        type: "integer"
+        required: false
+        description: "Action execution priority"
+        default: 100
+        min: 1
+        max: 1000
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "mood_change"
+    message_type: "MoodChange"
+    description: "AI mood changes for behavioral adaptation"
+    frequency: "on_change"
+    schema:
+      mood:
+        type: "string"
+        required: true
+        description: "New AI mood state"
+        allowed: ["playful", "brooding", "curious", "melancholic", "zippy", "lonely", "mischievous", "sleepy", "neutral"]
+      source:
+        type: "string"
+        required: true
+        description: "What triggered the mood change"
+      context:
+        type: "string"
+        required: false
+        description: "Additional context for mood change"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "voice_command"
+    message_type: "VoiceCommand"
+    callback: "on_voice_command"
+    description: "Voice commands to process"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Voice command text"
+      confidence:
+        type: "float"
+        required: true
+        description: "Recognition confidence"
+        min: 0.0
+        max: 1.0
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+# Node configuration
+configuration:
+  # AI settings with OpenAI GPT
+  ai:
+    mode: "openai"                  # openai, echo, reverse, parrot
+    model: "gpt-3.5-turbo"          # OpenAI model to use
+    max_tokens: 150                 # Max response length
+    temperature: 0.7                # Creativity level (0-1)
+    system_prompt: "You are Nevil, a helpful and friendly robot assistant. You should respond conversationally and helpfully to user questions. Keep responses concise and natural for speech synthesis."
+    max_history_length: 10          # Conversation history to maintain
+    response_prefix: "I heard you say: "  # Only used in echo mode
+    confidence_threshold: 0.3       # Lower threshold for testing
+    processing_delay: 0.1           # Brief thinking time
+
+  # Processing settings
+  processing:
+    max_queue_size: 3
+    processing_timeout: 5.0

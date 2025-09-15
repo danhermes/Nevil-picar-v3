@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""
+Nevil v3.0 CLI
+
+Command-line interface for managing the Nevil robotic framework.
+"""
+
+import sys
+import os
+import argparse
+import time
+import signal
+import subprocess
+
+# Add framework to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Load environment variables from .env file
+def load_env_file():
+    """Load environment variables from .env file if it exists"""
+    env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if os.path.exists(env_file):
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key] = value
+        print(f"Loaded environment variables from {env_file}")
+    else:
+        print(f"No .env file found at {env_file}")
+
+# Load environment variables
+load_env_file()
+
+from nevil_framework.launcher import NevilLauncher
+from nevil_framework.config_loader import ConfigLoader
+
+
+def cmd_start(args):
+    """Start the Nevil system"""
+    print("Starting Nevil v3.0...")
+
+    launcher = NevilLauncher()
+    shutdown_requested = False
+
+    def signal_handler(signum, frame):
+        nonlocal shutdown_requested
+        # Only print once, not for every process
+        if not shutdown_requested:
+            if signum == signal.SIGINT:
+                print("\n\nShutting down Nevil v3.0...")
+            shutdown_requested = True
+
+            # v2.0 pattern: Force kill all nevil processes
+            import subprocess
+            try:
+                # Use -9 to prevent processes from printing their own messages
+                subprocess.run(['pkill', '-9', '-f', 'nevil'], check=False)
+                subprocess.run(['pkill', '-9', '-f', 'speech_recognition_node'], check=False)
+                subprocess.run(['pkill', '-9', '-f', 'speech_synthesis_node'], check=False)
+                subprocess.run(['pkill', '-9', '-f', 'ai_cognition_node'], check=False)
+                subprocess.run(['pkill', '-9', '-f', 'test_node'], check=False)
+            except:
+                pass
+
+            # Remove signal handlers to prevent re-entry
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+            # Force exit with os._exit() - more aggressive than sys.exit()
+            os._exit(0)
+
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        print("[CLI] Calling launcher.start_system()...")
+        result = launcher.start_system()
+        print(f"[CLI] launcher.start_system() returned: {result}")
+        if result:
+            print("System started successfully. Press Ctrl+C to stop.")
+
+            # Custom wait loop with signal checking
+            while launcher.running and not shutdown_requested:
+                time.sleep(0.1)
+
+            # If we exit the loop due to shutdown request, stop the system
+            if shutdown_requested:
+                launcher.stop_system()
+
+        else:
+            print("Failed to start system")
+            return 1
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt received, shutting down...")
+        shutdown_requested = True
+        launcher.stop_system()
+    finally:
+        # Ensure system is stopped, but avoid double-stopping
+        if launcher.running:
+            launcher.stop_system()
+
+    print("Nevil v3.0 shutdown complete.")
+    return 0
+
+
+def cmd_validate(args):
+    """Validate configuration files"""
+    print("Validating Nevil v3.0 configuration...")
+
+    config_loader = ConfigLoader()
+
+    try:
+        # Validate root .nodes file
+        config_loader.load_nodes_config()
+
+        # Discover and validate node .messages files
+        nodes = config_loader.discover_nodes()
+        for node_name in nodes:
+            config_loader.load_node_messages_config(node_name)
+
+        if config_loader.has_errors():
+            print("Configuration validation failed:")
+            config_loader.print_errors()
+            return 1
+        else:
+            print(f"Configuration validation passed for {len(nodes)} nodes")
+            return 0
+
+    except Exception as e:
+        print(f"Validation error: {e}")
+        return 1
+
+
+def cmd_status(args):
+    """Check system status"""
+    print("Checking Nevil v3.0 status...")
+    # For Phase 1, just check if configuration is valid
+    return cmd_validate(args)
+
+
+def cmd_stop(args):
+    """Stop the Nevil system"""
+    print("Stop command not implemented in Phase 1")
+    print("Use Ctrl+C to stop a running system")
+    return 0
+
+
+def main():
+    """Main CLI entry point"""
+    parser = argparse.ArgumentParser(
+        description="Nevil v3.0 - Lightweight Robot Framework",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  ./nevil start              Start the system
+  ./nevil validate           Validate configuration
+  ./nevil status             Check system status
+
+For more information, see the documentation in docs/nevil_v3/
+        """
+    )
+
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # Start command
+    start_parser = subparsers.add_parser('start', help='Start the Nevil system')
+    start_parser.set_defaults(func=cmd_start)
+
+    # Validate command
+    validate_parser = subparsers.add_parser('validate', help='Validate configuration files')
+    validate_parser.set_defaults(func=cmd_validate)
+
+    # Status command
+    status_parser = subparsers.add_parser('status', help='Check system status')
+    status_parser.set_defaults(func=cmd_status)
+
+    # Stop command
+    stop_parser = subparsers.add_parser('stop', help='Stop the Nevil system')
+    stop_parser.set_defaults(func=cmd_stop)
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    if not hasattr(args, 'func'):
+        parser.print_help()
+        return 1
+
+    try:
+        return args.func(args)
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,23 @@
+# Nevil v3.0 Root Configuration
+version: "3.0"
+description: "Nevil v3.0 test system"
+
+system:
+  framework_version: "3.0.0"
+  log_level: "INFO"
+  health_check_interval: 5.0
+  shutdown_timeout: 10.0
+  startup_delay: 2.0
+
+environment:
+  NEVIL_VERSION: "3.0"
+  LOG_LEVEL: "INFO"
+
+launch:
+  # Phase 1: Core conversation loop + navigation (unsubscribed)
+  startup_order: ["speech_recognition", "speech_synthesis", "ai_cognition", "navigation"]
+  parallel_launch: false
+  wait_for_healthy: true
+  ready_timeout: 30.0
+
+# OpenAI API key will be loaded from system environment
