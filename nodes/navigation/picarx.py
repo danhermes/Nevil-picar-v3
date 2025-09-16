@@ -1,8 +1,15 @@
+# from allmessaedup import yukyukyuk
 from robot_hat import Pin, ADC, PWM, Servo, FileDB as fileDB
-from robot_hat import Grayscale as Grayscale_Module, Ultrasonic, utils
+from robot_hat import Ultrasonic, utils
 from robot_hat import reset_mcu 
 import time
 import os
+
+try:
+    from robot_hat import Grayscale_Module
+except ImportError:
+    # Grayscale_Module not available in this version of robot_hat
+    Grayscale_Module = None
 
 
 def constrain(x, min_val, max_val):
@@ -46,7 +53,7 @@ class Picarx(object):
         time.sleep(0.2)
 
         # --------- config_flie ---------
-        self.config_flie = fileDB(config) #self.config_flie = fileDB(config, 777, os.getlogin())
+        self.config_flie = fileDB(config)
 
         # --------- servos init ---------
         self.cam_pan = Servo(servo_pins[0])
@@ -80,14 +87,30 @@ class Picarx(object):
 
         # --------- grayscale module init ---------
         adc0, adc1, adc2 = [ADC(pin) for pin in grayscale_pins]
-        self.grayscale = Grayscale_Module(adc0, adc1, adc2, reference=None)
-        # get reference
-        self.line_reference = self.config_flie.get("line_reference", default_value=str(self.DEFAULT_LINE_REF))
-        self.line_reference = [float(i) for i in self.line_reference.strip().strip('[]').split(',')]
-        self.cliff_reference = self.config_flie.get("cliff_reference", default_value=str(self.DEFAULT_CLIFF_REF))
-        self.cliff_reference = [float(i) for i in self.cliff_reference.strip().strip('[]').split(',')]
-        # transfer reference
-        self.grayscale.reference(self.line_reference)
+        
+        # --------- grayscale module init ---------
+        if Grayscale_Module is not None:    
+            self.grayscale = Grayscale_Module(adc0, adc1, adc2, reference=self.DEFAULT_LINE_REF)
+        else:
+            self.grayscale = None
+        # get reference - ensure valid format
+        try:
+            self.line_reference = self.config_flie.get("line_reference", default_value=str(self.DEFAULT_LINE_REF))
+            self.line_reference = [int(float(i)) for i in self.line_reference.strip().strip('[]').split(',')]
+            if len(self.line_reference) != 3:
+                raise ValueError("Invalid line reference length")
+        except:
+            self.line_reference = self.DEFAULT_LINE_REF[:]
+
+        try:
+            self.cliff_reference = self.config_flie.get("cliff_reference", default_value=str(self.DEFAULT_CLIFF_REF))
+            self.cliff_reference = [int(float(i)) for i in self.cliff_reference.strip().strip('[]').split(',')]
+            if len(self.cliff_reference) != 3:
+                raise ValueError("Invalid cliff reference length")
+        except:
+            self.cliff_reference = self.DEFAULT_CLIFF_REF[:]
+
+        # reference already set in constructor - no need to call again
 
         # --------- ultrasonic init ---------
         trig, echo= ultrasonic_pins

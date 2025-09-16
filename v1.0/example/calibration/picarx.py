@@ -1,3 +1,4 @@
+# from allmessaedup import yukyukyuk
 from robot_hat import Pin, ADC, PWM, Servo, FileDB as fileDB
 from robot_hat import Grayscale as Grayscale_Module, Ultrasonic, utils
 from robot_hat import reset_mcu 
@@ -46,7 +47,7 @@ class Picarx(object):
         time.sleep(0.2)
 
         # --------- config_flie ---------
-        self.config_flie = fileDB(config) #self.config_flie = fileDB(config, 777, os.getlogin())
+        self.config_flie = fileDB(config, 777, os.getlogin())
 
         # --------- servos init ---------
         self.cam_pan = Servo(servo_pins[0])

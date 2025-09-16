@@ -14,20 +14,40 @@ import sys
 from typing import Dict, Any, List, Optional
 from nevil_framework.base_node import NevilNode
 from robot_hat import reset_mcu
+# # Hardware interface - use local picarx.py
+# try:
+#     from .calibration import servos_reset
+# except ImportError:
+#     # For dynamic loading, import directly
+#     import importlib.util
+#     calibration_path = os.path.join(os.path.dirname(__file__), 'calibration.py')
+#     spec = importlib.util.spec_from_file_location("calibration", calibration_path)
+#     calibration_module = importlib.util.module_from_spec(spec)
+#     spec.loader.exec_module(calibration_module)
+#     Picarx = calibration_module.servos_reset
 
 # Import v1.0 action functions
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'v1.0'))
+#sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'v1.0'))
 try:
-    from helpers.action_helper import actions_dict
+    from .action_helper import actions_dict
 except ImportError:
-    # Fallback if v1.0 not available
-    actions_dict = {}
+    try:
+        from action_helper import actions_dict
+    except ImportError:
+        # Fallback if action_helper not available
+        actions_dict = {}
 
-# Hardware interface (will be None in simulation mode)
+# Hardware interface - use local picarx.py
 try:
-    from picarx import Picarx
+    from .picarx import Picarx
 except ImportError:
-    Picarx = None
+    # For dynamic loading, import directly
+    import importlib.util
+    picarx_path = os.path.join(os.path.dirname(__file__), 'picarx.py')
+    spec = importlib.util.spec_from_file_location("picarx", picarx_path)
+    picarx_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(picarx_module)
+    Picarx = picarx_module.Picarx
 
 
 class NavigationNode(NevilNode):
@@ -63,6 +83,7 @@ class NavigationNode(NevilNode):
         """Initialize navigation and hardware"""
         self.logger.info("Initializing Navigation Node...")
 
+
         # Initialize PiCar-X hardware - REQUIRED
         if not Picarx:
             raise RuntimeError("PiCar-X hardware not available - navigation requires real hardware")
@@ -73,8 +94,8 @@ class NavigationNode(NevilNode):
         self.car.speed = self.default_speed
 
         # Motion initialization - reset to known state
-        
-        reset_mcu()
+        servos_reset() #from calibration.py
+        reset_mcu() # from robot-hat
         time.sleep(.2)
         self.car.reset()  # Reset all servos to center
         time.sleep(0.5)   # Allow hardware to settle
@@ -107,7 +128,7 @@ class NavigationNode(NevilNode):
 
     def _action_processing_loop(self):
         """Background action processing loop"""
-        while not self.stop_event.is_set():
+        while not self.shutdown_event.is_set():
             try:
                 # Get action from queue with timeout
                 try:
@@ -136,7 +157,7 @@ class NavigationNode(NevilNode):
             self.logger.info(f"🎯 ACTION LIST: {actions}")
 
             for i, action_str in enumerate(actions, 1):
-                if self.stop_event.is_set():
+                if self.shutdown_event.is_set():
                     self.logger.warning(f"❌ Action sequence stopped at {i}/{len(actions)}")
                     break
 
