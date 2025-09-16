@@ -99,6 +99,25 @@ subscribes:
         required: false
         description: "Text being spoken (if speaking=true)"
 
+  - topic: "navigation_status"
+    message_type: "NavigationStatus"
+    callback: "on_navigation_status_change"
+    description: "Navigation execution status updates"
+    schema:
+      status:
+        type: "string"
+        required: true
+        description: "Current navigation status"
+        allowed: ["idle", "executing", "completed", "error"]
+      current_action:
+        type: "string"
+        required: false
+        description: "Currently executing action"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
 # Node configuration
 configuration:
   # Audio input settings - v1.0 EXACT parameters

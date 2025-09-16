@@ -112,6 +112,47 @@ publishes:
         required: true
         description: "Unix timestamp"
 
+  - topic: "robot_action"
+    message_type: "RobotAction"
+    description: "Robot movement and expression commands extracted from AI responses"
+    frequency: "on_demand"
+    schema:
+      actions:
+        type: "array"
+        required: true
+        description: "List of action commands to execute"
+        items:
+          type: "string"
+      source_text:
+        type: "string"
+        required: true
+        description: "Original user command that triggered actions"
+      mood:
+        type: "string"
+        required: false
+        description: "Current AI mood affecting actions"
+        default: "neutral"
+      priority:
+        type: "integer"
+        required: false
+        description: "Action execution priority"
+        default: 100
+
+  - topic: "mood_change"
+    message_type: "MoodChange"
+    description: "AI mood state changes"
+    frequency: "on_change"
+    schema:
+      mood:
+        type: "string"
+        required: true
+        description: "New AI mood state"
+      source:
+        type: "string"
+        required: true
+        description: "What triggered the mood change"
+        default: "ai_response"
+
 # Topics this node subscribes to
 subscribes:
   - topic: "voice_command"

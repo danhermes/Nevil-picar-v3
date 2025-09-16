@@ -178,9 +178,8 @@ class AiCognitionNode(NevilNode):
                     self.processing_count += 1
                     self.last_response_time = time.time()
 
-                    # Publish actions and mood if available
-                    if hasattr(self, '_last_parsed_response'):
-                        self._publish_actions_and_mood(self._last_parsed_response, text, message.data)
+                    # Actions and mood are already published in _generate_openai_response
+                    # No need to publish again here
 
                     # Set system to speaking mode
                     self._set_system_mode("speaking", "generated_response")
@@ -265,8 +264,17 @@ class AiCognitionNode(NevilNode):
                         response_text = message.content[0].text.value
                         self.logger.debug(f"OpenAI Assistant raw response: '{response_text}'")
 
-                        # Parse JSON response and return only the answer field
+                        # Parse JSON response
                         parsed_response = self._parse_json_response(response_text)
+
+                        # Publish actions and mood to navigation node
+                        self._publish_actions_and_mood(
+                            parsed_response,
+                            user_input,  # Use the correct parameter name
+                            {"text": user_input}  # Create a simple command dict
+                        )
+
+                        # Return only the answer field
                         return parsed_response.get('answer', response_text)
 
                 self.logger.warning("No assistant response found in completed run")

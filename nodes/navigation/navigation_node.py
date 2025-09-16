@@ -14,7 +14,7 @@ import sys
 from typing import Dict, Any, List, Optional
 from nevil_framework.base_node import NevilNode
 from robot_hat import reset_mcu
-# # Hardware interface - use local picarx.py
+# Hardware interface - use local picarx.py
 # try:
 #     from .calibration import servos_reset
 # except ImportError:
@@ -27,15 +27,38 @@ from robot_hat import reset_mcu
 #     Picarx = calibration_module.servos_reset
 
 # Import v1.0 action functions
-#sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'v1.0'))
 try:
     from .action_helper import actions_dict
-except ImportError:
+    print(f"[NAVIGATION DEBUG] Imported actions_dict with relative import: {len(actions_dict)} actions")
+except ImportError as e1:
+    print(f"[NAVIGATION DEBUG] Relative import failed: {e1}")
     try:
         from action_helper import actions_dict
-    except ImportError:
-        # Fallback if action_helper not available
-        actions_dict = {}
+        print(f"[NAVIGATION DEBUG] Imported actions_dict with direct import: {len(actions_dict)} actions")
+    except ImportError as e2:
+        print(f"[NAVIGATION DEBUG] Direct import failed: {e2}")
+        # Dynamic import using absolute path
+        try:
+            import importlib.util
+            import sys
+
+            # First add navigation directory to path so utils can be found
+            nav_dir = os.path.dirname(__file__)
+            if nav_dir not in sys.path:
+                sys.path.insert(0, nav_dir)
+
+            action_helper_path = os.path.join(nav_dir, 'action_helper.py')
+            print(f"[NAVIGATION DEBUG] Trying dynamic import from: {action_helper_path}")
+            spec = importlib.util.spec_from_file_location("action_helper", action_helper_path)
+            action_helper_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(action_helper_module)
+            actions_dict = action_helper_module.actions_dict
+            print(f"[NAVIGATION DEBUG] Dynamic import SUCCESS: {len(actions_dict)} actions")
+        except Exception as e3:
+            print(f"[NAVIGATION DEBUG] Dynamic import failed: {e3}")
+            # Fallback if action_helper not available
+            actions_dict = {}
+            print(f"[NAVIGATION DEBUG] Using empty actions_dict fallback")
 
 # Hardware interface - use local picarx.py
 try:
@@ -74,6 +97,9 @@ class NavigationNode(NevilNode):
 
         # Import v1.0 action functions
         self.action_functions = actions_dict
+        print(f"[NAVIGATION DEBUG] self.action_functions set to: {len(self.action_functions)} actions")
+        if self.action_functions:
+            print(f"[NAVIGATION DEBUG] Available actions: {list(self.action_functions.keys())[:10]}")
 
         # Processing state
         self.actions_processed = 0
@@ -81,24 +107,34 @@ class NavigationNode(NevilNode):
 
     def initialize(self):
         """Initialize navigation and hardware"""
+        print(f"[NAVIGATION DEBUG] initialize() called - logger available: {hasattr(self, 'logger')}")
         self.logger.info("Initializing Navigation Node...")
+        print(f"[NAVIGATION DEBUG] After logger.info call")
 
 
         # Initialize PiCar-X hardware - REQUIRED
         if not Picarx:
             raise RuntimeError("PiCar-X hardware not available - navigation requires real hardware")
 
+        print(f"[NAVIGATION DEBUG] Creating Picarx object...")
         self.car = Picarx()
+        print(f"[NAVIGATION DEBUG] Picarx object created")
 
         # Set default speed
         self.car.speed = self.default_speed
+        print(f"[NAVIGATION DEBUG] Default speed set to {self.default_speed}")
 
         # Motion initialization - reset to known state
-        servos_reset() #from calibration.py
+        #servos_reset() #from calibration.py - NOT DEFINED YET
+        print(f"[NAVIGATION DEBUG] Calling reset_mcu()...")
         reset_mcu() # from robot-hat
+        print(f"[NAVIGATION DEBUG] reset_mcu() complete")
         time.sleep(.2)
+        print(f"[NAVIGATION DEBUG] Calling car.reset()...")
         self.car.reset()  # Reset all servos to center
+        print(f"[NAVIGATION DEBUG] car.reset() complete")
         time.sleep(0.5)   # Allow hardware to settle
+        print(f"[NAVIGATION DEBUG] Hardware settle delay complete")
 
         # Set default positions (v1.0 pattern)
         self.car.set_dir_servo_angle(0)    # Wheels straight
@@ -156,6 +192,14 @@ class NavigationNode(NevilNode):
             self.logger.info(f"🎬 STARTING ACTION SEQUENCE: {len(actions)} actions from '{source_text[:40]}...' (mood: {mood})")
             self.logger.info(f"🎯 ACTION LIST: {actions}")
 
+            # Publish navigation status - executing
+            self.publish("navigation_status", {
+                "status": "executing",
+                "current_action": actions[0] if actions else "",
+                "actions_remaining": len(actions),
+                "timestamp": time.time()
+            })
+
             for i, action_str in enumerate(actions, 1):
                 if self.shutdown_event.is_set():
                     self.logger.warning(f"❌ Action sequence stopped at {i}/{len(actions)}")
@@ -177,6 +221,14 @@ class NavigationNode(NevilNode):
                 time.sleep(0.1)
 
             self.logger.info(f"🏁 ACTION SEQUENCE COMPLETE: {len(actions)} actions finished")
+
+            # Publish navigation status - completed
+            self.publish("navigation_status", {
+                "status": "completed",
+                "current_action": "",
+                "actions_remaining": 0,
+                "timestamp": time.time()
+            })
 
             self.actions_processed += 1
             self.last_action_time = time.time()
@@ -220,6 +272,15 @@ class NavigationNode(NevilNode):
                         'name': full_action
                     }
 
+                # Try converting underscores to spaces for AI-generated action names
+                underscore_to_space = action_str.replace('_', ' ')
+                if underscore_to_space in self.action_functions:
+                    return {
+                        'function': self.action_functions[underscore_to_space],
+                        'params': {},
+                        'name': underscore_to_space
+                    }
+
             self.logger.warning(f"Unknown action: {action_str}")
             return None
 
@@ -229,6 +290,7 @@ class NavigationNode(NevilNode):
 
     def _execute_action(self, action_data: Dict[str, Any]):
         """Execute a parsed action"""
+        self.logger.info(f"[NAVIGATION DEBUG] Executing action: {action_data}")
         if not action_data or not action_data['function']:
             return
 
@@ -238,7 +300,7 @@ class NavigationNode(NevilNode):
             name = action_data['name']
 
             # Execute on real hardware
-            self.logger.info(f"🚗 [HARDWARE] {name} - params: {params}")
+            self.logger.info(f"🚗 [HARDWARE] func: {func} {name} - params: {params}")
             if params:
                 func(self.car, **params)
             else:
@@ -249,6 +311,7 @@ class NavigationNode(NevilNode):
 
     def on_robot_action(self, message):
         """Handle robot action messages from AI cognition"""
+        self.logger.info(f"Received robot action message: {message}")
         try:
             data = message.data
             actions = data.get('actions', [])

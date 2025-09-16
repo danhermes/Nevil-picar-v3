@@ -52,6 +52,7 @@ class SpeechRecognitionNode(NevilNode):
         self.is_listening = False
         self.system_mode = "idle"
         self.speaking_active = False
+        self.navigation_active = False
 
         # Shutdown handling (v2.0 pattern)
         self.stop_event = threading.Event()
@@ -343,12 +344,34 @@ class SpeechRecognitionNode(NevilNode):
             if speaking and self.is_listening:
                 self._stop_listening()
                 self.logger.info("Paused speech recognition - system is speaking")
-            elif not speaking and not self.is_listening:
+            elif not speaking and not self.is_listening and not self.navigation_active:
                 self._start_listening()
                 self.logger.info("Resumed speech recognition - system finished speaking")
 
         except Exception as e:
             self.logger.error(f"Error handling speaking status change: {e}")
+
+    def on_navigation_status_change(self, message):
+        """Handle navigation status changes (declaratively configured callback)"""
+        try:
+            status = message.data.get("status", "idle")
+            current_action = message.data.get("current_action", "")
+
+            # Update navigation state
+            self.navigation_active = status == "executing"
+
+            self.logger.debug(f"Navigation status changed: {status} (action: {current_action})")
+
+            # Pause listening during action execution to avoid servo noise triggering recognition
+            if status == "executing" and self.is_listening:
+                self._stop_listening()
+                self.logger.info("Paused speech recognition - robot is executing actions")
+            elif status in ["completed", "idle"] and not self.is_listening and not self.speaking_active:
+                self._start_listening()
+                self.logger.info("Resumed speech recognition - robot finished actions")
+
+        except Exception as e:
+            self.logger.error(f"Error handling navigation status change: {e}")
 
     def stop(self, timeout=10.0):
         """Stop the node gracefully and cleanup audio resources"""

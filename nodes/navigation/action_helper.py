@@ -240,6 +240,8 @@ def keep_think(car):
         car.set_cam_tilt_angle(-i*2)
         car.set_dir_servo_angle(i*2)
         sleep(.05)
+    # Reset to center position
+    car.reset()
 
 def shake_head(car):
     car.stop()
