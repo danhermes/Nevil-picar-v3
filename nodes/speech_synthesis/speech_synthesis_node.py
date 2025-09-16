@@ -10,6 +10,7 @@ import os
 import queue
 import threading
 from nevil_framework.base_node import NevilNode
+from nevil_framework.busy_state import busy_state
 from audio.audio_output import AudioOutput
 
 
@@ -120,14 +121,20 @@ class SpeechSynthesisNode(NevilNode):
 
     def _process_tts_request(self, tts_request):
         """Process TTS request using v1.0 EXACT pipeline"""
+        text = tts_request.get("text", "")
+        if not text.strip():
+            self.logger.warning("Empty text for TTS, skipping")
+            return
+
+        # Acquire busy state for speaking
+        self.logger.debug("Acquiring busy state for TTS...")
+        if not busy_state.acquire("speaking"):
+            self.logger.error("Could not acquire busy state for TTS, aborting")
+            return
+
         try:
-            text = tts_request.get("text", "")
             voice = tts_request.get("voice", self.tts_config.get("default_voice", "onyx"))
             volume_db = self.audio_config.get("volume_db", -10)
-
-            if not text.strip():
-                self.logger.warning("Empty text for TTS, skipping")
-                return
 
             self.logger.info(f"Processing TTS: '{text}' (voice: {voice})")
 
@@ -170,6 +177,10 @@ class SpeechSynthesisNode(NevilNode):
 
             # Publish speaking status
             self._publish_speaking_status(False, "", "")
+
+            # Release busy state
+            busy_state.release()
+            self.logger.debug("Released busy state after TTS")
 
     def _publish_speaking_status(self, speaking, text, voice):
         """Publish speaking status change"""

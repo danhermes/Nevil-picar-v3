@@ -13,6 +13,7 @@ import os
 import sys
 from typing import Dict, Any, List, Optional
 from nevil_framework.base_node import NevilNode
+from nevil_framework.busy_state import busy_state
 from robot_hat import reset_mcu
 # Hardware interface - use local picarx.py
 # try:
@@ -184,13 +185,20 @@ class NavigationNode(NevilNode):
 
     def _process_action_sequence(self, action_sequence: Dict[str, Any]):
         """Process a sequence of actions"""
-        try:
-            actions = action_sequence.get('actions', [])
-            source_text = action_sequence.get('source_text', '')
-            mood = action_sequence.get('mood', 'neutral')
+        actions = action_sequence.get('actions', [])
+        source_text = action_sequence.get('source_text', '')
+        mood = action_sequence.get('mood', 'neutral')
 
+        self.logger.info(f"📝 SOURCE: '{source_text}'")
+
+        # Acquire busy state for entire action sequence
+        self.logger.debug("Acquiring busy state for navigation...")
+        if not busy_state.acquire("acting"):
+            self.logger.error("Could not acquire busy state for navigation, aborting action sequence")
+            return
+
+        try:
             self.logger.info(f"🎬 STARTING ACTION SEQUENCE: {len(actions)} actions from '{source_text[:40]}...' (mood: {mood})")
-            self.logger.info(f"🎯 ACTION LIST: {actions}")
 
             # Publish navigation status - executing
             self.publish("navigation_status", {
@@ -235,6 +243,11 @@ class NavigationNode(NevilNode):
 
         except Exception as e:
             self.logger.error(f"Error processing action sequence: {e}")
+
+        finally:
+            # Always release busy state
+            busy_state.release()
+            self.logger.debug("Released busy state after navigation")
 
     def _parse_action(self, action_str: str) -> Optional[Dict[str, Any]]:
         """Parse an action string into function and parameters"""

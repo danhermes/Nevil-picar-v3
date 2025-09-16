@@ -10,6 +10,7 @@ import os
 import threading
 import queue
 from nevil_framework.base_node import NevilNode
+from nevil_framework.busy_state import busy_state
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -112,23 +113,38 @@ class SpeechRecognitionNode(NevilNode):
                     time.sleep(0.5)
                     continue
 
-                # DISCRETE RECORDING CYCLE
-                self.logger.debug("Starting discrete recording cycle...")
+                # DISCRETE RECORDING CYCLE - Acquire busy state first
+                self.logger.debug("Waiting for busy state...")
 
-                # 1. Mic ON - single recording session
-                audio = self.audio_input.listen_for_speech(
-                    timeout=10.0,  # Wait for speech
-                    phrase_time_limit=10.0  # Max recording time
-                )
+                # Acquire busy state - prevents recording during TTS/actions
+                # Using default 2-minute timeout to prevent freezing
+                if not busy_state.acquire("listening"):
+                    self.logger.warning("System busy, skipping recording cycle")
+                    time.sleep(1.0)
+                    continue
 
-                # 2. Mic OFF (happens automatically when listen_for_speech returns)
+                try:
+                    self.logger.debug("Starting discrete recording cycle (not busy)...")
 
-                if audio:
-                    # 3. PROCESS: Save → STT → AI → TTS
-                    self.logger.debug("Processing captured audio...")
-                    self._process_audio_discrete(audio)
-                else:
-                    self.logger.debug("No speech detected, continuing...")
+                    # 1. Mic ON - single recording session
+                    audio = self.audio_input.listen_for_speech(
+                        timeout=10.0,  # Wait for speech
+                        phrase_time_limit=10.0  # Max recording time
+                    )
+
+                    # 2. Mic OFF (happens automatically when listen_for_speech returns)
+
+                    if audio:
+                        # 3. PROCESS: Save → STT → AI → TTS
+                        self.logger.debug("Processing captured audio...")
+                        self._process_audio_discrete(audio)
+                    else:
+                        self.logger.debug("No speech detected, continuing...")
+
+                finally:
+                    # ALWAYS release the busy state
+                    busy_state.release()
+                    self.logger.debug("Released busy state")
 
                 # 4. Brief pause before next cycle
                 time.sleep(0.5)
@@ -213,8 +229,8 @@ class SpeechRecognitionNode(NevilNode):
                     self.recognition_count += 1
                     self.last_recognition_time = time.time()
 
-                    # STEP 5: Wait for TTS to complete before next recording cycle
-                    self._wait_for_tts_completion()
+                    # STEP 5: Lock will handle synchronization
+                    # No need to wait - the lock prevents overlap
                 else:
                     self.logger.error("Failed to publish voice command")
 
