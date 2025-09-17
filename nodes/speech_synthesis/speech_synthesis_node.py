@@ -85,8 +85,7 @@ class SpeechSynthesisNode(NevilNode):
             self.logger.info(f"  Format: {self.tts_config.get('response_format', 'wav')}")
             self.logger.info(f"  Queue size: {self.tts_queue.maxsize}")
 
-            # Create TTS directory
-            os.makedirs("./tts", exist_ok=True)
+            # Ensure audio directories exist (handled by audio_utils)
 
             # Publish initial audio output status
             self._publish_audio_output_status()

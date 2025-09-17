@@ -49,7 +49,7 @@ class NevilLogScope(QMainWindow):
 
         # Filtering state
         self.active_levels = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
-        self.active_nodes = {'system', 'speech_recognition', 'speech_synthesis', 'ai_cognition'}
+        self.active_nodes = {'system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation'}
         self.search_pattern = ""
         self.search_regex = None
         self.crash_monitor_mode = False  # Crash Monitor Mode
@@ -102,8 +102,8 @@ class NevilLogScope(QMainWindow):
         # Log displays - uses most of the screen
         self.create_log_panels(main_splitter)
 
-        # Set proportions - minimal space for controls, maximum for messages
-        main_splitter.setSizes([200, 1400])  # 200px for controls, 1400px for logs
+        # Set proportions - sufficient space for controls, maximum for messages
+        main_splitter.setSizes([250, 1350])  # 250px for controls, 1350px for logs
 
         # Compact status bar
         self.create_status_bar()
@@ -111,7 +111,7 @@ class NevilLogScope(QMainWindow):
     def create_compact_toolbar(self, layout):
         """Create compact toolbar with essential controls"""
         toolbar_layout = QHBoxLayout()
-        toolbar_layout.setSpacing(5)  # Compact spacing
+        toolbar_layout.setSpacing(8)  # Better spacing for visibility
 
         # Search box (smaller)
         self.search_box = QLineEdit()
@@ -120,44 +120,63 @@ class NevilLogScope(QMainWindow):
         self.search_box.textChanged.connect(self.on_search_changed)
         self.search_box.returnPressed.connect(self.focus_next_match)
 
-        # Compact mode buttons
-        self.dialogue_mode_button = QPushButton("💬")
-        self.dialogue_mode_button.setToolTip("Dialogue Mode (Ctrl+Shift+D)")
+        # Set tooltip style for all widgets
+        QApplication.instance().setStyleSheet("""
+            QToolTip {
+                background-color: #f8f8f8;
+                color: #999999;
+                border: none;
+                padding: 4px;
+                font-size: 12px;
+            }
+        """)
+
+        # Compact mode buttons with text labels
+        self.dialogue_mode_button = QPushButton("Talk")
+        self.dialogue_mode_button.setToolTip("Dialogue Mode - Show only speech/TTS/STT (Ctrl+Shift+D)")
         self.dialogue_mode_button.clicked.connect(self.toggle_dialogue_mode)
-        self.dialogue_mode_button.setMaximumWidth(40)
+        self.dialogue_mode_button.setStyleSheet(self.get_button_style())
 
-        self.crash_monitor_button = QPushButton("🚨")
-        self.crash_monitor_button.setToolTip("Crash Monitor (Ctrl+Shift+C)")
+        self.crash_monitor_button = QPushButton("Err")
+        self.crash_monitor_button.setToolTip("Crash Monitor - Show errors only (Ctrl+Shift+C)")
         self.crash_monitor_button.clicked.connect(self.toggle_crash_monitor_mode)
-        self.crash_monitor_button.setMaximumWidth(40)
+        self.crash_monitor_button.setStyleSheet(self.get_button_style())
 
-        self.live_button = QPushButton("⏸️")
-        self.live_button.setToolTip("Pause/Resume (Space)")
+        self.live_button = QPushButton("||")
+        self.live_button.setToolTip("Pause/Resume live updates (Space)")
         self.live_button.clicked.connect(self.toggle_pause)
-        self.live_button.setMaximumWidth(40)
+        self.live_button.setStyleSheet(self.get_button_style())
 
-        self.clear_button = QPushButton("🗑️")
-        self.clear_button.setToolTip("Clear Logs (Ctrl+L)")
+        self.clear_button = QPushButton("CLR")
+        self.clear_button.setToolTip("Clear all logs (Ctrl+L)")
         self.clear_button.clicked.connect(self.clear_logs)
-        self.clear_button.setMaximumWidth(40)
+        self.clear_button.setStyleSheet(self.get_button_style())
+
+        # Auto-scroll button
+        self.auto_scroll_button = QPushButton("Auto")
+        self.auto_scroll_button.setToolTip("Toggle auto-scroll (A)")
+        self.auto_scroll_button.clicked.connect(self.toggle_auto_scroll)
+        self.auto_scroll_button.setStyleSheet(self.get_active_button_style() if self.auto_scroll else self.get_button_style())
 
         # Stats label (compact)
         self.stats_label = QLabel("Entries: 0 | Filtered: 0")
         self.stats_label.setStyleSheet("font-family: monospace; font-size: 10px; color: #888;")
 
-        # Layout
+        # Layout with all buttons
         toolbar_layout.addWidget(QLabel("Search:"))
         toolbar_layout.addWidget(self.search_box)
         toolbar_layout.addWidget(self.dialogue_mode_button)
         toolbar_layout.addWidget(self.crash_monitor_button)
         toolbar_layout.addWidget(self.live_button)
+        toolbar_layout.addWidget(self.auto_scroll_button)
         toolbar_layout.addWidget(self.clear_button)
         toolbar_layout.addStretch()
         toolbar_layout.addWidget(self.stats_label)
 
         toolbar_widget = QWidget()
         toolbar_widget.setLayout(toolbar_layout)
-        toolbar_widget.setMaximumHeight(35)  # Keep toolbar compact
+        toolbar_widget.setMaximumHeight(50)  # Slightly taller for better button visibility
+        toolbar_widget.setStyleSheet("background-color: #2a2a2a; border-bottom: 2px solid #555;")
         layout.addWidget(toolbar_widget)
 
     def create_toolbar(self, layout):
@@ -217,7 +236,7 @@ class NevilLogScope(QMainWindow):
         control_layout.addWidget(QLabel("Node Status:"))
         self.node_indicators = {}
 
-        for node in ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition']:
+        for node in ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation']:
             indicator_layout = QHBoxLayout()
 
             # Status LED
@@ -231,7 +250,7 @@ class NevilLogScope(QMainWindow):
             checkbox.stateChanged.connect(lambda state, n=node: self.toggle_node_filter(n, state))
 
             # Hotkey label
-            hotkey_map = {'system': 'F1', 'speech_recognition': 'F2', 'speech_synthesis': 'F3', 'ai_cognition': 'F4'}
+            hotkey_map = {'system': 'F1', 'speech_recognition': 'F2', 'speech_synthesis': 'F3', 'ai_cognition': 'F4', 'visual': 'F5', 'navigation': 'F6'}
             hotkey_label = QLabel(f"({hotkey_map[node]})")
             hotkey_label.setStyleSheet("color: gray; font-size: 10px;")
 
@@ -283,17 +302,17 @@ class NevilLogScope(QMainWindow):
     def create_compact_control_panel(self, splitter):
         """Create compact control panel for maximum message space"""
         control_widget = QWidget()
-        control_widget.setMaximumWidth(200)  # Very compact
+        control_widget.setMaximumWidth(250)  # Wider to fit node names
         control_layout = QVBoxLayout(control_widget)
         control_layout.setSpacing(3)  # Tight spacing
 
         # Node filters (compact checkboxes)
         control_layout.addWidget(QLabel("Nodes:"))
-        for node in ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition']:
-            checkbox = QCheckBox(node.replace('_', ' ')[:8] + "...")  # Shortened names
+        for node in ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation']:
+            checkbox = QCheckBox(node.replace('_', ' ').title())  # Full names, properly capitalized
             checkbox.setChecked(True)
             checkbox.stateChanged.connect(lambda state, n=node: self.toggle_node_filter(n, state))
-            checkbox.setStyleSheet("font-size: 9px;")
+            checkbox.setStyleSheet("font-size: 10px;")
             control_layout.addWidget(checkbox)
 
         control_layout.addWidget(QLabel(""))  # Small spacer
@@ -331,7 +350,9 @@ class NevilLogScope(QMainWindow):
             ("system", "🖥️ System"),
             ("speech_recognition", "🎤 Speech Rec"),
             ("speech_synthesis", "🔊 Speech Syn"),
-            ("ai_cognition", "🧠 AI Cognition")
+            ("ai_cognition", "🧠 AI Cognition"),
+            ("visual", "📷 Visual"),
+            ("navigation", "🧭 Navigation")
         ]
 
         for node_key, tab_name in node_tabs:
@@ -370,8 +391,8 @@ class NevilLogScope(QMainWindow):
         for i, level in enumerate(levels, 1):
             QShortcut(QKeySequence(f"Ctrl+{i}"), self, lambda l=level: self.toggle_level_hotkey(l))
 
-        # Node filters (F1-F4)
-        nodes = ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition']
+        # Node filters (F1-F6)
+        nodes = ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation']
         for i, node in enumerate(nodes, 1):
             QShortcut(QKeySequence(f"F{i}"), self, lambda n=node: self.toggle_node_hotkey(n))
 
@@ -601,6 +622,8 @@ class NevilLogScope(QMainWindow):
             'speech_recognition': '#40FFFF', # Light Cyan
             'speech_synthesis': '#80FF80',   # Light Green
             'ai_cognition': '#FF80FF',       # Light Magenta
+            'visual': '#FFB347',           # Peach/Orange
+            'navigation': '#9370DB',       # Medium Purple
         }
 
         level_color = level_colors.get(level, '#FFFFFF')
@@ -728,23 +751,37 @@ class NevilLogScope(QMainWindow):
     def toggle_pause(self):
         """Toggle pause state"""
         self.paused = not self.paused
-        self.live_button.setText("▶️" if self.paused else "⏸️")
-        self.live_button.setToolTip("Resume" if self.paused else "Pause")
+        self.live_button.setText(">" if self.paused else "||")
+        self.live_button.setToolTip("Resume (Space)" if self.paused else "Pause (Space)")
+
+        # Update button style for visual feedback
+        if self.paused:
+            self.live_button.setStyleSheet(self.get_active_button_style("#ff8844"))
+        else:
+            self.live_button.setStyleSheet(self.get_button_style())
 
     def toggle_auto_scroll(self):
         """Toggle auto-scroll"""
         self.auto_scroll = not self.auto_scroll
+        self.auto_scroll_button.setText("Auto" if self.auto_scroll else "Man")
+        self.auto_scroll_button.setToolTip("Auto-scroll ON (A)" if self.auto_scroll else "Auto-scroll OFF - Manual mode (A)")
+
+        # Update button style for visual feedback
+        if self.auto_scroll:
+            self.auto_scroll_button.setStyleSheet(self.get_active_button_style("#44aa44"))
+        else:
+            self.auto_scroll_button.setStyleSheet(self.get_button_style())
 
     def toggle_crash_monitor_mode(self):
         """Toggle Crash Monitor Mode"""
         self.crash_monitor_mode = not self.crash_monitor_mode
 
         if self.crash_monitor_mode:
-            self.crash_monitor_button.setStyleSheet("QPushButton { background-color: #ff4444; color: white; }")
-            self.crash_monitor_button.setToolTip("Crash Monitor ON (Ctrl+Shift+C)")
+            self.crash_monitor_button.setStyleSheet(self.get_active_button_style("#ff4444"))
+            self.crash_monitor_button.setToolTip("Crash Monitor ON - Showing errors only (Ctrl+Shift+C)")
         else:
-            self.crash_monitor_button.setStyleSheet("")
-            self.crash_monitor_button.setToolTip("Crash Monitor OFF (Ctrl+Shift+C)")
+            self.crash_monitor_button.setStyleSheet(self.get_button_style())
+            self.crash_monitor_button.setToolTip("Crash Monitor OFF - Click to show errors only (Ctrl+Shift+C)")
 
         # Refresh view with new filter
         self.refresh_all_views()
@@ -754,11 +791,11 @@ class NevilLogScope(QMainWindow):
         self.dialogue_mode = not self.dialogue_mode
 
         if self.dialogue_mode:
-            self.dialogue_mode_button.setStyleSheet("QPushButton { background-color: #4444ff; color: white; }")
-            self.dialogue_mode_button.setToolTip("Dialogue Mode ON (Ctrl+Shift+D)")
+            self.dialogue_mode_button.setStyleSheet(self.get_active_button_style("#4444ff"))
+            self.dialogue_mode_button.setToolTip("Dialogue Mode ON - Showing speech/TTS/STT only (Ctrl+Shift+D)")
         else:
-            self.dialogue_mode_button.setStyleSheet("")
-            self.dialogue_mode_button.setToolTip("Dialogue Mode OFF (Ctrl+Shift+D)")
+            self.dialogue_mode_button.setStyleSheet(self.get_button_style())
+            self.dialogue_mode_button.setToolTip("Dialogue Mode OFF - Click to show speech only (Ctrl+Shift+D)")
 
         # Refresh view with new filter
         self.refresh_all_views()
@@ -883,6 +920,46 @@ class NevilLogScope(QMainWindow):
         """Create bottom status bar"""
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("LogScope ready - monitoring logs directory")
+
+    def get_button_style(self):
+        """Get normal button style"""
+        return """
+            QPushButton {
+                background-color: #3a3a3a;
+                border: 1px solid #555;
+                border-radius: 5px;
+                padding: 5px;
+                font-size: 18px;
+                min-width: 45px;
+                min-height: 35px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                border: 1px solid #666;
+            }
+            QPushButton:pressed {
+                background-color: #2a2a2a;
+            }
+        """
+
+    def get_active_button_style(self, color="#5555ff"):
+        """Get active/pressed button style"""
+        return f"""
+            QPushButton {{
+                background-color: {color};
+                border: 2px solid #aaa;
+                border-radius: 5px;
+                padding: 5px;
+                font-size: 18px;
+                min-width: 45px;
+                min-height: 35px;
+                color: white;
+            }}
+            QPushButton:hover {{
+                background-color: {color};
+                border: 2px solid #ccc;
+            }}
+        """
 
     def closeEvent(self, event):
         """Handle application close"""

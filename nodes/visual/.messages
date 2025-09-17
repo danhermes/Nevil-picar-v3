@@ -1,0 +1,85 @@
+# Visual Node Configuration
+# Handles camera operations and image capture
+
+node_name: "visual"
+version: "3.0"
+description: "Visual processing node for camera capture and image management"
+
+# Topics this node publishes to
+publishes:
+  - topic: "visual_data"
+    message_type: "VisualData"
+    description: "Captured image data for AI processing"
+    frequency: "on_demand"
+    schema:
+      image_data:
+        type: "string"
+        required: true
+        description: "Base64 encoded image data"
+      format:
+        type: "string"
+        required: true
+        description: "Image format (JPEG, PNG, etc.)"
+      width:
+        type: "integer"
+        required: true
+        description: "Image width in pixels"
+      height:
+        type: "integer"
+        required: true
+        description: "Image height in pixels"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+      capture_id:
+        type: "string"
+        required: true
+        description: "Unique capture identifier"
+
+  - topic: "system_mode"
+    message_type: "SystemMode"
+    description: "Visual system mode changes"
+    frequency: "on_change"
+    schema:
+      mode:
+        type: "string"
+        required: true
+        description: "System mode"
+      reason:
+        type: "string"
+        required: false
+        description: "Reason for mode change"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+      node:
+        type: "string"
+        required: true
+        description: "Node name"
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "snap_pic"
+    message_type: "SnapPicRequest"
+    callback: "on_snap_pic"
+    description: "Camera capture requests"
+    schema:
+      requested_by:
+        type: "string"
+        required: true
+        description: "Node requesting the snapshot"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+# Node configuration
+configuration:
+  camera:
+    width: 640
+    height: 480
+    quality: 85
+    format: "JPEG"
+    min_interval: 1.0  # Minimum seconds between captures

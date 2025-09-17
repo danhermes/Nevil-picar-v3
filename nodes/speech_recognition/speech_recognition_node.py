@@ -473,7 +473,7 @@ class SpeechRecognitionNode(NevilNode):
             wav_data = audio.get_wav_data()
 
             # Create audio directory in workspace if it doesn't exist
-            audio_dir = os.path.join(os.getcwd(), "captured_audio")
+            audio_dir = os.path.join(os.getcwd(), "audio", "user_wavs")
             os.makedirs(audio_dir, exist_ok=True)
 
             # Create audio file with timestamp in workspace
@@ -486,8 +486,8 @@ class SpeechRecognitionNode(NevilNode):
 
             self.logger.info(f"Audio file created: {temp_audio_path} ({len(wav_data)} bytes)")
 
-            # Prune captured_audio directory to keep only last 5 files
-            self._prune_audio_files(audio_dir, max_files=5)
+            # Prune user_wavs directory to keep only last 10 files
+            self._prune_audio_files(audio_dir, max_files=10)
 
             try:
                 # Use OpenAI Whisper API

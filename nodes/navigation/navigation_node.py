@@ -16,16 +16,16 @@ from nevil_framework.base_node import NevilNode
 from nevil_framework.busy_state import busy_state
 from robot_hat import reset_mcu
 # Hardware interface - use local picarx.py
-# try:
-#     from .calibration import servos_reset
-# except ImportError:
-#     # For dynamic loading, import directly
-#     import importlib.util
-#     calibration_path = os.path.join(os.path.dirname(__file__), 'calibration.py')
-#     spec = importlib.util.spec_from_file_location("calibration", calibration_path)
-#     calibration_module = importlib.util.module_from_spec(spec)
-#     spec.loader.exec_module(calibration_module)
-#     Picarx = calibration_module.servos_reset
+try:
+   from .calibration import servos_reset
+except ImportError:
+    # For dynamic loading, import directly
+    import importlib.util
+    calibration_path = os.path.join(os.path.dirname(__file__), 'calibration.py')
+    spec = importlib.util.spec_from_file_location("calibration", calibration_path)
+    calibration_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(calibration_module)
+    servos_reset = calibration_module.servos_reset
 
 # Import v1.0 action functions
 try:
@@ -96,6 +96,9 @@ class NavigationNode(NevilNode):
         # Movement configuration
         self.default_speed = 30
 
+        # Camera positioning (v1.0 pattern)
+        self.DEFAULT_HEAD_TILT = 10  # Slightly higher for better field of view
+
         # Import v1.0 action functions
         self.action_functions = actions_dict
         print(f"[NAVIGATION DEBUG] self.action_functions set to: {len(self.action_functions)} actions")
@@ -126,11 +129,12 @@ class NavigationNode(NevilNode):
         print(f"[NAVIGATION DEBUG] Default speed set to {self.default_speed}")
 
         # Motion initialization - reset to known state
-        #servos_reset() #from calibration.py - NOT DEFINED YET
         print(f"[NAVIGATION DEBUG] Calling reset_mcu()...")
         reset_mcu() # from robot-hat
         print(f"[NAVIGATION DEBUG] reset_mcu() complete")
         time.sleep(.2)
+        servos_reset(self.car) #from calibration.py - pass shared instance
+        print(f"[NAVIGATION DEBUG] servos_reset() complete")
         print(f"[NAVIGATION DEBUG] Calling car.reset()...")
         self.car.reset()  # Reset all servos to center
         print(f"[NAVIGATION DEBUG] car.reset() complete")
@@ -138,9 +142,9 @@ class NavigationNode(NevilNode):
         print(f"[NAVIGATION DEBUG] Hardware settle delay complete")
 
         # Set default positions (v1.0 pattern)
-        self.car.set_dir_servo_angle(0)    # Wheels straight
-        self.car.set_cam_pan_angle(0)      # Camera center
-        self.car.set_cam_tilt_angle(20)    # Head up (v1.0 DEFAULT_HEAD_TILT)
+        #self.car.set_dir_servo_angle(0)                    # Wheels straight
+        #self.car.set_cam_pan_angle(0)                      # Camera center
+        self.car.set_cam_tilt_angle(self.DEFAULT_HEAD_TILT) # Head up for better view
 
         self.logger.info("PiCar-X hardware initialized and motion reset complete")
 

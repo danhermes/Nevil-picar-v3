@@ -145,7 +145,7 @@ def test_speech_to_text_simulation():
     logger.info("=" * 60)
 
     # Check for existing audio files
-    audio_dir = os.path.join(os.getcwd(), "captured_audio")
+    audio_dir = os.path.join(os.getcwd(), "audio", "user_wavs")
     if os.path.exists(audio_dir):
         audio_files = [f for f in os.listdir(audio_dir) if f.endswith('.wav')]
         if audio_files:

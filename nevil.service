@@ -1,0 +1,22 @@
+[Unit]
+Description=Nevil Robot System
+After=network.target sound.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/dan/Nevil-picar-v3
+ExecStart=/home/dan/Nevil-picar-v3/nevil start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=HOME=/home/dan
+Environment=USER=dan
+
+[Install]
+WantedBy=multi-user.target

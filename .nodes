@@ -14,8 +14,8 @@ environment:
   LOG_LEVEL: "INFO"
 
 launch:
-  # Phase 1: Core conversation loop + navigation (unsubscribed)
-  startup_order: ["speech_recognition", "speech_synthesis", "ai_cognition", "navigation"]
+  # Phase 1: Core conversation loop + navigation + visual
+  startup_order: ["speech_recognition", "speech_synthesis", "ai_cognition", "navigation", "visual"]
   parallel_launch: false
   wait_for_healthy: true
   ready_timeout: 30.0

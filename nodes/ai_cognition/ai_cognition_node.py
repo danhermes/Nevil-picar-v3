@@ -63,6 +63,9 @@ class AiCognitionNode(NevilNode):
         self.last_response_time = 0
         self.openai_error_count = 0
 
+        # Visual data storage
+        self.latest_image = None
+
         # Fallback responses for stub mode
         self.echo_responses = [
             "I heard you say: {text}",
@@ -132,6 +135,177 @@ class AiCognitionNode(NevilNode):
         """Main processing loop - minimal for stub"""
         # Brief pause to prevent busy waiting
         time.sleep(0.1)
+
+    def on_visual_data(self, message):
+        """
+        Handle visual data from camera (declaratively configured callback)
+
+        Automatically sends image to OpenAI for analysis.
+        """
+        try:
+            image_data = message.data.get("image_data", "")
+            capture_id = message.data.get("capture_id", "")
+            timestamp = message.data.get("timestamp", time.time())
+
+            if image_data:
+                # Store the latest image
+                self.latest_image = {
+                    "data": image_data,
+                    "capture_id": capture_id,
+                    "timestamp": timestamp
+                }
+                self.logger.info(f"✓ Received visual data: {capture_id}")
+
+                # Immediately send to OpenAI for analysis
+                self._process_image_with_ai(image_data, capture_id)
+
+            else:
+                self.logger.warning("Received empty visual data")
+
+        except Exception as e:
+            self.logger.error(f"Error handling visual data: {e}")
+
+    def _process_image_with_ai(self, image_data, capture_id):
+        """Send image to OpenAI for analysis and generate speech response"""
+        try:
+            self.logger.info(f"🖼️ Processing image {capture_id} with OpenAI...")
+
+            # Set system to thinking mode
+            self._set_system_mode("thinking", "processing_image")
+
+            # Generate AI response about the image
+            if self.mode == "openai" and self.openai_client:
+                response_text = self._generate_openai_image_response(image_data)
+            else:
+                response_text = "I can see an image, but I'm in echo mode and cannot analyze it."
+
+            if response_text:
+                # Prepare text response message
+                text_response_data = {
+                    "text": response_text,
+                    "voice": "onyx",
+                    "priority": 90,  # High priority for image responses
+                    "context_id": f"image_{capture_id}",
+                    "timestamp": time.time()
+                }
+
+                # Publish text response for speech synthesis
+                if self.publish("text_response", text_response_data):
+                    if "error" in response_text.lower() or "trouble" in response_text.lower():
+                        self.logger.error(f"❌ Image analysis failed: {response_text}")
+                    else:
+                        self.logger.info(f"✓ Image analysis successful: {response_text}")
+                    self._set_system_mode("speaking", "image_analysis_response")
+                else:
+                    self.logger.error("❌ Failed to publish image analysis response")
+                    self._set_system_mode("error", "publish_failed")
+            else:
+                self.logger.warning("No image analysis response generated")
+                self._set_system_mode("idle", "no_image_response")
+
+        except Exception as e:
+            self.logger.error(f"Error processing image with AI: {e}")
+            self._set_system_mode("error", f"image_processing_error: {e}")
+
+    def _generate_openai_image_response(self, image_data):
+        """Generate response using OpenAI Assistants API with vision (v1.0 approach)"""
+        try:
+            # Create thread if it doesn't exist
+            if not self.thread_created:
+                self.current_thread = self.openai_client.beta.threads.create()
+                self.thread_created = True
+                self.logger.info(f"🔄 Created new thread for assistant {self.openai_assistant_id}: {self.current_thread.id}")
+
+            # Use v1.0 file upload approach with purpose="vision"
+            import base64
+            import tempfile
+            import os
+
+            try:
+                # Decode base64 to binary data
+                image_binary = base64.b64decode(image_data)
+                self.logger.info(f"📊 Image decoded: {len(image_binary)} bytes")
+
+                # Save image permanently and create temp file for upload
+                timestamp = int(time.time())
+                image_filename = f"images/nevil_image_{timestamp}.jpg"
+
+                # Save permanent copy
+                with open(image_filename, "wb") as perm_file:
+                    perm_file.write(image_binary)
+                self.logger.info(f"💾 Saved image to: {image_filename}")
+
+                # Upload file with purpose="vision" (v1.0 approach)
+                self.logger.info(f"⬆️ Uploading image file to OpenAI with purpose=vision...")
+                img_file = self.openai_client.files.create(
+                    file=open(image_filename, "rb"),
+                    purpose="vision"
+                )
+
+                self.logger.info(f"✅ Image uploaded, file_id: {img_file.id}")
+                # Note: Keeping permanent file, not deleting it
+
+                # Add message using image_file (v1.0 approach)
+                self.openai_client.beta.threads.messages.create(
+                    thread_id=self.current_thread.id,
+                    role="user",
+                    content=[
+                        {
+                            "type": "text",
+                            "text": "I can see an image. Please describe what you observe."
+                        },
+                        {
+                            "type": "image_file",
+                            "image_file": {"file_id": img_file.id}
+                        }
+                    ]
+                )
+
+                # Use create_and_poll for simpler run management (v1.0 approach)
+                run = self.openai_client.beta.threads.runs.create_and_poll(
+                    thread_id=self.current_thread.id,
+                    assistant_id=self.openai_assistant_id
+                )
+
+                if run.status == 'completed':
+                    # Get the assistant's response
+                    messages = self.openai_client.beta.threads.messages.list(
+                        thread_id=self.current_thread.id
+                    )
+
+                    # Get the latest assistant message
+                    for message in messages.data:
+                        if message.role == 'assistant':
+                            response_text = message.content[0].text.value
+                            self.logger.info(f"✅ Image analysis successful: {response_text}")
+
+                            # Parse JSON response to extract answer, actions, and mood (same as voice)
+                            parsed_response = self._parse_json_response(response_text)
+
+                            # Publish actions and mood from image response
+                            self._publish_actions_and_mood(
+                                parsed_response,
+                                "Image analysis",  # original_text
+                                {"text": "Image analysis"}  # original_command
+                            )
+
+                            # Return only the answer part for speech synthesis
+                            return parsed_response.get('answer', response_text)
+
+                    self.logger.warning("No assistant response found in completed run")
+                    return "I see an image but couldn't analyze it properly."
+
+                else:
+                    self.logger.error(f"Assistant run failed with status: {run.status}")
+                    return "I had trouble analyzing that image."
+
+            except Exception as e:
+                self.logger.error(f"Error processing image file: {e}")
+                return "I had trouble processing the image file."
+
+        except Exception as e:
+            self.logger.error(f"Error calling OpenAI for image analysis: {e}")
+            return "I see an image but encountered an error during analysis."
 
     def on_voice_command(self, message):
         """
@@ -223,7 +397,7 @@ class AiCognitionNode(NevilNode):
             if not self.thread_created:
                 self.current_thread = self.openai_client.beta.threads.create()
                 self.thread_created = True
-                self.logger.debug(f"Created new thread: {self.current_thread.id}")
+                self.logger.info(f"🔄 Created new thread for assistant {self.openai_assistant_id}: {self.current_thread.id}")
 
             # Add the user message to the thread
             self.openai_client.beta.threads.messages.create(
@@ -296,7 +470,7 @@ class AiCognitionNode(NevilNode):
             return f"I heard: {user_input}"
 
     def _parse_json_response(self, response_text: str) -> dict:
-        """Parse AI response to extract answer, actions, and mood"""
+        """Parse AI response to extract answer, actions, mood, and tool calls"""
         try:
             # Try to parse as JSON
             response_data = json.loads(response_text)
@@ -307,6 +481,19 @@ class AiCognitionNode(NevilNode):
                     'actions': response_data.get('actions', []),
                     'mood': response_data.get('mood', 'neutral')
                 }
+
+                # Check for simple tool flags
+                if response_data.get('take_snapshot'):
+                    self.logger.info("🎯 Detected take_snapshot flag in AI response")
+                    self._handle_take_snapshot()
+
+                # Also check if take_snapshot is in the actions list
+                actions = response_data.get('actions', [])
+                if 'take_snapshot' in actions:
+                    self.logger.info("🎯 Detected take_snapshot in actions array")
+                    self._handle_take_snapshot()
+                    # Remove it from actions so it doesn't get sent to navigation
+                    parsed['actions'] = [a for a in actions if a != 'take_snapshot']
 
                 self.logger.debug(f"Parsed JSON response: answer='{parsed['answer'][:50]}...', "
                                 f"actions={parsed['actions']}, mood={parsed['mood']}")
@@ -326,6 +513,42 @@ class AiCognitionNode(NevilNode):
         except Exception as e:
             self.logger.warning(f"Error parsing JSON response: {e}")
             return {'answer': response_text, 'actions': [], 'mood': 'neutral'}
+
+    def _process_tool_calls(self, tool_calls: list):
+        """Process tool calls from AI response"""
+        try:
+            for tool_call in tool_calls:
+                tool_name = tool_call.get('name', '')
+                tool_args = tool_call.get('arguments', {})
+
+                self.logger.info(f"Processing tool call: {tool_name} with args: {tool_args}")
+
+                if tool_name == 'take_snapshot':
+                    self._handle_take_snapshot(tool_args)
+                else:
+                    self.logger.warning(f"Unknown tool call: {tool_name}")
+
+        except Exception as e:
+            self.logger.error(f"Error processing tool calls: {e}")
+
+    def _handle_take_snapshot(self):
+        """Handle take_snapshot request"""
+        try:
+            self.logger.info("🔍 AI requested camera snapshot via take_snapshot tool")
+
+            # Publish snap_pic request to visual node
+            snap_pic_data = {
+                "requested_by": "ai_cognition",
+                "timestamp": time.time()
+            }
+
+            if self.publish("snap_pic", snap_pic_data):
+                self.logger.info("✓ Snapshot request published to visual node")
+            else:
+                self.logger.error("❌ Failed to publish snap_pic request")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error handling take_snapshot: {e}")
 
     def _publish_actions_and_mood(self, parsed_response: dict, original_text: str, original_command: dict):
         """Publish robot actions and mood changes to navigation node"""

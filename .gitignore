@@ -1,5 +1,7 @@
 
-.env
-captured_audio/
+.env 
+audio/user_wavs/
+audio/nevil_wavs/
 logs/
 tts/
+images/

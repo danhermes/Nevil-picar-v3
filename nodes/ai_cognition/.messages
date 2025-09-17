@@ -153,6 +153,21 @@ publishes:
         description: "What triggered the mood change"
         default: "ai_response"
 
+  - topic: "snap_pic"
+    message_type: "SnapPicRequest"
+    description: "Camera capture requests initiated by AI"
+    frequency: "on_demand"
+    schema:
+      requested_by:
+        type: "string"
+        required: true
+        description: "Node requesting the snapshot"
+        default: "ai_cognition"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
 # Topics this node subscribes to
 subscribes:
   - topic: "voice_command"
@@ -174,6 +189,36 @@ subscribes:
         type: "float"
         required: true
         description: "Unix timestamp"
+
+  - topic: "visual_data"
+    message_type: "VisualData"
+    callback: "on_visual_data"
+    description: "Camera image data for AI processing"
+    schema:
+      image_data:
+        type: "string"
+        required: true
+        description: "Base64 encoded image data"
+      format:
+        type: "string"
+        required: true
+        description: "Image format (JPEG, PNG, etc.)"
+      width:
+        type: "integer"
+        required: true
+        description: "Image width in pixels"
+      height:
+        type: "integer"
+        required: true
+        description: "Image height in pixels"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+      capture_id:
+        type: "string"
+        required: true
+        description: "Unique capture identifier"
 
 # Node configuration
 configuration:
