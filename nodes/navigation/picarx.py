@@ -115,6 +115,11 @@ class Picarx(object):
         # --------- ultrasonic init ---------
         trig, echo= ultrasonic_pins
         self.ultrasonic = Ultrasonic(Pin(trig), Pin(echo, mode=Pin.IN, pull=Pin.PULL_DOWN))
+
+        # --------- obstacle avoidance distances ---------
+        # These values are used by action_helper.py for obstacle detection
+        self.SafeDistance = 100   # Distance in cm considered safe for movement
+        self.DangerDistance = 50  # Distance in cm considered dangerous
         
     def set_motor_speed(self, motor, speed):
         ''' set motor speed

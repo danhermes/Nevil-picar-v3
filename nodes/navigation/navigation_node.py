@@ -169,23 +169,38 @@ class NavigationNode(NevilNode):
 
     def _action_processing_loop(self):
         """Background action processing loop"""
+        self.logger.info("🔄 [QUEUE] Action processing loop started")
+
         while not self.shutdown_event.is_set():
             try:
+                self.logger.debug(f"🔄 [QUEUE] Checking queue (size: {self.action_queue.qsize()})")
+
                 # Get action from queue with timeout
                 try:
                     priority, timestamp, action_sequence = self.action_queue.get(timeout=1.0)
+                    self.logger.info(f"📦 [QUEUE] Retrieved action sequence - Priority: {priority}, Timestamp: {timestamp}")
+                    self.logger.debug(f"📦 [QUEUE] Action sequence: {action_sequence}")
+
                 except queue.Empty:
+                    # Log every 30 seconds in debug mode to show we're alive
+                    if int(time.time()) % 30 == 0:
+                        self.logger.debug(f"🔄 [QUEUE] Queue empty, waiting... (queue size: {self.action_queue.qsize()})")
                     continue
 
                 # Process the action sequence
+                self.logger.info(f"🚀 [QUEUE] Starting to process action sequence")
                 self._process_action_sequence(action_sequence)
+                self.logger.info(f"✅ [QUEUE] Completed processing action sequence")
 
                 # Mark task as done
                 self.action_queue.task_done()
+                self.logger.debug(f"📝 [QUEUE] Marked queue task as done")
 
             except Exception as e:
-                self.logger.error(f"Error in action processing loop: {e}")
+                self.logger.error(f"❌ [QUEUE] Error in action processing loop: {e}")
                 time.sleep(0.5)
+
+        self.logger.info("🛑 [QUEUE] Action processing loop stopped")
 
     def _process_action_sequence(self, action_sequence: Dict[str, Any]):
         """Process a sequence of actions"""
@@ -255,60 +270,104 @@ class NavigationNode(NevilNode):
 
     def _parse_action(self, action_str: str) -> Optional[Dict[str, Any]]:
         """Parse an action string into function and parameters"""
+        self.logger.info(f"🔍 [PARSE] Parsing action: '{action_str}'")
+        self.logger.debug(f"🔍 [PARSE] Available action functions: {len(self.action_functions)} total")
+        self.logger.debug(f"🔍 [PARSE] Action functions keys (first 10): {list(self.action_functions.keys())[:10]}")
+
         try:
             parts = action_str.split()
+            self.logger.debug(f"🔍 [PARSE] Split into parts: {parts}")
+
+            if not parts:
+                self.logger.error(f"🔍 [PARSE] Empty action string after split")
+                return None
+
             action_name = parts[0]
+            self.logger.debug(f"🔍 [PARSE] Primary action name: '{action_name}'")
 
             # Handle parameterized movement actions
             if action_name in ['forward', 'backward']:
+                self.logger.info(f"🔍 [PARSE] Processing parameterized movement: {action_name}")
                 distance = int(parts[1]) if len(parts) > 1 else 10
                 speed = int(parts[2]) if len(parts) > 2 else self.default_speed
 
-                return {
-                    'function': self.action_functions.get(action_name),
+                function = self.action_functions.get(action_name)
+                self.logger.info(f"🔍 [PARSE] Movement function found: {function is not None}")
+                self.logger.debug(f"🔍 [PARSE] Distance: {distance}cm, Speed: {speed}")
+
+                result = {
+                    'function': function,
                     'params': {'distance_cm': distance, 'speed': speed},
                     'name': f"{action_name} {distance}cm @ {speed}"
                 }
+                self.logger.info(f"✅ [PARSE] Parameterized action parsed: {result['name']}")
+                return result
 
             # Handle simple actions
             elif action_name in self.action_functions:
-                return {
-                    'function': self.action_functions[action_name],
+                self.logger.info(f"🔍 [PARSE] Processing simple action: {action_name}")
+                function = self.action_functions[action_name]
+                result = {
+                    'function': function,
                     'params': {},
                     'name': action_name
                 }
+                self.logger.info(f"✅ [PARSE] Simple action parsed: {result['name']}")
+                return result
 
             # Handle compound action names
             else:
+                self.logger.info(f"🔍 [PARSE] Trying compound action matching for: {action_name}")
+
                 # Try joining parts for multi-word actions like "shake head"
                 full_action = ' '.join(parts)
+                self.logger.debug(f"🔍 [PARSE] Trying full action: '{full_action}'")
+
                 if full_action in self.action_functions:
-                    return {
-                        'function': self.action_functions[full_action],
+                    self.logger.info(f"🔍 [PARSE] Found full action match: '{full_action}'")
+                    function = self.action_functions[full_action]
+                    result = {
+                        'function': function,
                         'params': {},
                         'name': full_action
                     }
+                    self.logger.info(f"✅ [PARSE] Compound action parsed: {result['name']}")
+                    return result
 
                 # Try converting underscores to spaces for AI-generated action names
                 underscore_to_space = action_str.replace('_', ' ')
+                self.logger.debug(f"🔍 [PARSE] Trying underscore conversion: '{underscore_to_space}'")
+
                 if underscore_to_space in self.action_functions:
-                    return {
-                        'function': self.action_functions[underscore_to_space],
+                    self.logger.info(f"🔍 [PARSE] Found underscore match: '{underscore_to_space}'")
+                    function = self.action_functions[underscore_to_space]
+                    result = {
+                        'function': function,
                         'params': {},
                         'name': underscore_to_space
                     }
+                    self.logger.info(f"✅ [PARSE] Underscore action parsed: {result['name']}")
+                    return result
 
-            self.logger.warning(f"Unknown action: {action_str}")
+            self.logger.warning(f"❌ [PARSE] Unknown action: '{action_str}' - not found in action_functions")
+            self.logger.debug(f"❌ [PARSE] Available actions: {list(self.action_functions.keys())}")
             return None
 
         except Exception as e:
-            self.logger.error(f"Error parsing action '{action_str}': {e}")
+            self.logger.error(f"❌ [PARSE] Error parsing action '{action_str}': {e}")
             return None
 
     def _execute_action(self, action_data: Dict[str, Any]):
         """Execute a parsed action"""
-        self.logger.info(f"[NAVIGATION DEBUG] Executing action: {action_data}")
-        if not action_data or not action_data['function']:
+        self.logger.info(f"⚡ [EXEC] Starting action execution")
+        self.logger.debug(f"⚡ [EXEC] Full action data: {action_data}")
+
+        if not action_data:
+            self.logger.error(f"❌ [EXEC] No action data provided")
+            return
+
+        if not action_data.get('function'):
+            self.logger.error(f"❌ [EXEC] No function in action data: {action_data}")
             return
 
         try:
@@ -316,27 +375,55 @@ class NavigationNode(NevilNode):
             params = action_data['params']
             name = action_data['name']
 
+            self.logger.info(f"⚡ [EXEC] Action: {name}")
+            self.logger.debug(f"⚡ [EXEC] Function: {func}")
+            self.logger.debug(f"⚡ [EXEC] Parameters: {params}")
+            self.logger.debug(f"⚡ [EXEC] Car object: {self.car}")
+
             # Execute on real hardware
-            self.logger.info(f"🚗 [HARDWARE] func: {func} {name} - params: {params}")
+            self.logger.info(f"🚗 [HARDWARE] Calling action_helper function: {func.__name__ if hasattr(func, '__name__') else str(func)}")
+            self.logger.debug(f"🚗 [HARDWARE] With car: {self.car} and params: {params}")
+
+            start_time = time.time()
+
             if params:
+                self.logger.debug(f"🚗 [HARDWARE] Calling with params: func(car, **{params})")
                 func(self.car, **params)
             else:
+                self.logger.debug(f"🚗 [HARDWARE] Calling without params: func(car)")
                 func(self.car)
 
+            execution_time = time.time() - start_time
+            self.logger.info(f"✅ [EXEC] Action '{name}' completed successfully in {execution_time:.3f}s")
+
         except Exception as e:
-            self.logger.error(f"Action execution error: {e}")
+            self.logger.error(f"❌ [EXEC] Action execution error for '{action_data.get('name', 'unknown')}': {e}")
+            self.logger.error(f"❌ [EXEC] Exception details: {type(e).__name__}: {str(e)}")
+            import traceback
+            self.logger.debug(f"❌ [EXEC] Full traceback: {traceback.format_exc()}")
 
     def on_robot_action(self, message):
         """Handle robot action messages from AI cognition"""
-        self.logger.info(f"Received robot action message: {message}")
+        self.logger.info(f"📨 [MESSAGE] RECEIVED robot action message")
+        self.logger.debug(f"📨 [MESSAGE] Full message object: {message}")
+        self.logger.debug(f"📨 [MESSAGE] Message type: {type(message)}")
+        self.logger.debug(f"📨 [MESSAGE] Message attributes: {dir(message)}")
+
         try:
             data = message.data
+            self.logger.info(f"📨 [MESSAGE] Message data: {data}")
+            self.logger.debug(f"📨 [MESSAGE] Data type: {type(data)}")
+
             actions = data.get('actions', [])
             priority = data.get('priority', 100)
             source_text = data.get('source_text', '')
 
+            self.logger.info(f"📨 [MESSAGE] Extracted actions: {actions}")
+            self.logger.info(f"📨 [MESSAGE] Priority: {priority}")
+            self.logger.info(f"📨 [MESSAGE] Source text: '{source_text}'")
+
             if not actions:
-                self.logger.debug("No actions in robot_action message")
+                self.logger.warning(f"📨 [MESSAGE] No actions in robot_action message - data: {data}")
                 return
 
             # Create action sequence
@@ -348,8 +435,12 @@ class NavigationNode(NevilNode):
                 'action_id': message.message_id if hasattr(message, 'message_id') else f"action_{int(time.time())}"
             }
 
+            self.logger.info(f"📨 [MESSAGE] Created action sequence: {action_sequence}")
+
             # Add to priority queue
+            self.logger.info(f"📨 [MESSAGE] Adding to queue with priority {priority}")
             self.action_queue.put((priority, time.time(), action_sequence))
+            self.logger.info(f"📨 [MESSAGE] Successfully added to queue")
 
             self.logger.info(f"📥 RECEIVED ACTIONS: {len(actions)} actions queued from AI")
             self.logger.info(f"📝 SOURCE: '{source_text}'")
@@ -358,7 +449,10 @@ class NavigationNode(NevilNode):
             self.logger.info(f"📊 QUEUE SIZE: {self.action_queue.qsize()}")
 
         except Exception as e:
-            self.logger.error(f"Error handling robot action: {e}")
+            self.logger.error(f"❌ [MESSAGE] Error handling robot action: {e}")
+            self.logger.error(f"❌ [MESSAGE] Exception type: {type(e).__name__}")
+            import traceback
+            self.logger.debug(f"❌ [MESSAGE] Full traceback: {traceback.format_exc()}")
 
     def on_mood_change(self, message):
         """Handle mood change messages from AI cognition"""
@@ -378,12 +472,29 @@ class NavigationNode(NevilNode):
 
     def get_navigation_stats(self):
         """Get navigation statistics"""
-        return {
+        stats = {
             "actions_processed": self.actions_processed,
             "last_action_time": self.last_action_time,
             "queue_size": self.action_queue.qsize(),
-            "available_actions": len(self.action_functions)
+            "available_actions": len(self.action_functions),
+            "action_functions_loaded": list(self.action_functions.keys()) if self.action_functions else [],
+            "car_initialized": self.car is not None,
+            "hardware_available": bool(self.car),
+            "status": self.status.value if hasattr(self, 'status') else "unknown"
         }
+
+        self.logger.info(f"📊 [STATS] Navigation statistics:")
+        self.logger.info(f"📊 [STATS] Actions processed: {stats['actions_processed']}")
+        self.logger.info(f"📊 [STATS] Queue size: {stats['queue_size']}")
+        self.logger.info(f"📊 [STATS] Available actions: {stats['available_actions']}")
+        self.logger.info(f"📊 [STATS] Car initialized: {stats['car_initialized']}")
+
+        if self.action_functions:
+            self.logger.info(f"📊 [STATS] Action functions: {list(self.action_functions.keys())}")
+        else:
+            self.logger.warning(f"📊 [STATS] No action functions loaded!")
+
+        return stats
 
     def cleanup(self):
         """Cleanup navigation resources"""

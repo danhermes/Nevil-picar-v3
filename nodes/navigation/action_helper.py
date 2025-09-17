@@ -2,6 +2,10 @@ from time import sleep
 from utils import gray_print
 #from vilib import Vilib  # Commented out - import issue
 import time
+import logging
+
+# Get logger for action_helper module
+logger = logging.getLogger('navigation')
 
 # Actions: forward, backward, left, right, stop, twist left, twist right, come here, shake head, 
 #    nod, wave hands, resist, act cute, rub hands, think, twist body, celebrate, depressed, keep think
@@ -10,57 +14,101 @@ import time
 
 def with_obstacle_check(func):
     """Decorator to add obstacle checking to movement functions
-    Uses move_forward's logic: 
+    Uses move_forward's logic:
     - SafeDistance: go straight
     - DangerDistance to SafeDistance: turn to avoid
     - Below DangerDistance: back up
     """
     def wrapper(car, *args, **kwargs):
         def check_distance():
-            distance = car.get_distance()
-            if distance >= car.SafeDistance:
-                #car.set_dir_servo_angle(0)
-                return "safe"
-            elif distance >= car.DangerDistance:
-                car.set_dir_servo_angle(30)
-                return "caution"
-            else:
-                car.set_dir_servo_angle(-30)
-                move_backward_this_way(car, 10, car.speed)
-                sleep(0.5)
-                return "danger"
-            
+            try:
+                logger.debug(f"🔍 [OBSTACLE_CHECK] Getting distance from car: {car}")
+                distance = car.get_distance()
+                logger.info(f"🔍 [OBSTACLE_CHECK] Current distance: {distance}")
+
+                # Check if car has SafeDistance and DangerDistance attributes
+                if hasattr(car, 'SafeDistance'):
+                    safe_distance = car.SafeDistance
+                    logger.debug(f"🔍 [OBSTACLE_CHECK] Car SafeDistance: {safe_distance}")
+                else:
+                    logger.warning(f"❌ [OBSTACLE_CHECK] Car missing SafeDistance attribute, using default 100")
+                    safe_distance = 100
+
+                if hasattr(car, 'DangerDistance'):
+                    danger_distance = car.DangerDistance
+                    logger.debug(f"🔍 [OBSTACLE_CHECK] Car DangerDistance: {danger_distance}")
+                else:
+                    logger.warning(f"❌ [OBSTACLE_CHECK] Car missing DangerDistance attribute, using default 50")
+                    danger_distance = 50
+
+                if distance >= safe_distance:
+                    logger.info(f"🔍 [OBSTACLE_CHECK] SAFE: distance {distance} >= {safe_distance}")
+                    return "safe"
+                elif distance >= danger_distance:
+                    logger.info(f"🔍 [OBSTACLE_CHECK] CAUTION: distance {distance} >= {danger_distance}")
+                    car.set_dir_servo_angle(30)
+                    return "caution"
+                else:
+                    logger.warning(f"🔍 [OBSTACLE_CHECK] DANGER: distance {distance} < {danger_distance}")
+                    car.set_dir_servo_angle(-30)
+                    move_backward_this_way(car, 10, car.speed)
+                    sleep(0.5)
+                    return "danger"
+
+            except Exception as e:
+                logger.error(f"❌ [OBSTACLE_CHECK] Error in distance check: {e}")
+                logger.debug(f"❌ [OBSTACLE_CHECK] Car attributes: {dir(car)}")
+                return "safe"  # Default to safe if error
+
         return func(car, *args, check_distance=check_distance, **kwargs)
     return wrapper
 
 @with_obstacle_check
 def move_forward_this_way(car, distance_cm, speed=None, check_distance=None):
     """Move forward a specific distance at given speed"""
+    logger.info(f"🚗 [ACTION_HELPER] move_forward_this_way called with distance_cm={distance_cm}, speed={speed}")
+    logger.debug(f"🚗 [ACTION_HELPER] Car object: {car}")
+
     distance_cm = distance_cm * 3 #calibrate distance
     if speed is None:
         speed = car.speed
+        logger.debug(f"🚗 [ACTION_HELPER] Using car default speed: {speed}")
+
     gray_print(f"Starting forward movement: distance={distance_cm}cm, speed={speed}")
-    
+    logger.info(f"🚗 [ACTION_HELPER] Calibrated distance: {distance_cm}cm, speed: {speed}")
+
     SPEED_TO_CM_PER_SEC = 0.7  # Needs calibration
     move_time = distance_cm / (speed * SPEED_TO_CM_PER_SEC)
     gray_print(f"Calculated move time: {move_time:.2f} seconds")
+    logger.info(f"🚗 [ACTION_HELPER] Calculated move time: {move_time:.2f} seconds")
     elapsed_time = 0
-    
+
     while elapsed_time < move_time:
-        status = check_distance()
-        if status == "danger":
-            gray_print("Obstacle too close! Backing up.")
-            return
-        elif status == "caution":
-            gray_print("Obstacle detected! Adjusting course.")
-            
-        car.forward(speed)
-        sleep(0.1)
-        elapsed_time += 0.1
-        if elapsed_time % 1 < 0.1:
-            gray_print(f"Moving... elapsed={elapsed_time:.1f}s")
-    
+        try:
+            logger.debug(f"🚗 [ACTION_HELPER] Checking distance (elapsed: {elapsed_time:.1f}s)")
+            status = check_distance()
+            logger.debug(f"🚗 [ACTION_HELPER] Distance check status: {status}")
+
+            if status == "danger":
+                gray_print("Obstacle too close! Backing up.")
+                logger.warning(f"🚗 [ACTION_HELPER] DANGER detected - stopping movement")
+                return
+            elif status == "caution":
+                gray_print("Obstacle detected! Adjusting course.")
+                logger.info(f"🚗 [ACTION_HELPER] CAUTION detected - adjusting course")
+
+            logger.debug(f"🚗 [ACTION_HELPER] Calling car.forward({speed})")
+            car.forward(speed)
+            sleep(0.1)
+            elapsed_time += 0.1
+            if elapsed_time % 1 < 0.1:
+                gray_print(f"Moving... elapsed={elapsed_time:.1f}s")
+        except Exception as e:
+            logger.error(f"❌ [ACTION_HELPER] Error in movement loop: {e}")
+            break
+
     gray_print("Movement complete, stopping")
+    logger.info(f"🚗 [ACTION_HELPER] Movement complete, calling car.stop()")
     car.stop()
 
 # def move_forward(car):
