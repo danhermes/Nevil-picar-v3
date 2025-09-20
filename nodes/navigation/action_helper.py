@@ -46,11 +46,15 @@ def with_obstacle_check(func):
                     return "safe"
                 elif distance >= danger_distance:
                     logger.info(f"🔍 [OBSTACLE_CHECK] CAUTION: distance {distance} >= {danger_distance}")
-                    car.set_dir_servo_angle(30)
+                    # Use smooth servo movement to avoid clicking
+                    if hasattr(car, 'dir_current_angle') and abs(car.dir_current_angle - 30) > 10:
+                        car.set_dir_servo_angle(30, smooth=True)
                     return "caution"
                 else:
                     logger.warning(f"🔍 [OBSTACLE_CHECK] DANGER: distance {distance} < {danger_distance}")
-                    car.set_dir_servo_angle(-30)
+                    # Use smooth servo movement to avoid clicking
+                    if hasattr(car, 'dir_current_angle') and abs(car.dir_current_angle - (-30)) > 10:
+                        car.set_dir_servo_angle(-30, smooth=True)
                     move_backward_this_way(car, 10, car.speed)
                     sleep(0.5)
                     return "danger"
@@ -148,11 +152,12 @@ def move_backward_this_way(car, distance_cm, speed=None):
 def turn_left(car):
     gray_print("Starting left turn sequence")
     gray_print("Setting wheel angle to -30°")
-    car.set_dir_servo_angle(-30)
+    # Use smooth movement for turns
+    car.set_dir_servo_angle(-30, smooth=True)
     gray_print("Moving forward first segment")
     move_forward_this_way(car, 20)
     gray_print("Straightening wheels")
-    car.set_dir_servo_angle(0)
+    car.set_dir_servo_angle(0, smooth=True)
     gray_print("Moving forward second segment")
     move_forward_this_way(car, 20)
     gray_print("Left turn complete")
@@ -160,11 +165,11 @@ def turn_left(car):
 def turn_right(car):
     gray_print("Starting right turn sequence")
     gray_print("Setting wheel angle to 30°")
-    car.set_dir_servo_angle(30)
+    car.set_dir_servo_angle(30, smooth=True)
     gray_print("Moving forward first segment")
     move_forward_this_way(car, 20)
     gray_print("Straightening wheels")
-    car.set_dir_servo_angle(0)
+    car.set_dir_servo_angle(0, smooth=True)
     gray_print("Moving forward second segment")
     move_forward_this_way(car, 20)
     gray_print("Right turn complete")
@@ -173,10 +178,10 @@ def stop(car):
     car.stop()
 
 def turn_left_in_place(car):
-    car.set_dir_servo_angle(-30)
+    car.set_dir_servo_angle(-30, smooth=True)
 
 def turn_right_in_place(car):
-    car.set_dir_servo_angle(30)
+    car.set_dir_servo_angle(30, smooth=True)
 
 # @with_obstacle_check
 # def come_here(car, check_distance=None):
@@ -223,24 +228,22 @@ def clamp_number(num,a,b):
 
 def wave_hands(car):
     car.reset()
-    car.set_cam_tilt_angle(20)
+    car.set_cam_tilt_angle(20, smooth=True)
     for _ in range(2):
-        car.set_dir_servo_angle(-25)
-        sleep(.1)
-        # car.set_dir_servo_angle(0)
-        # sleep(.1)
-        car.set_dir_servo_angle(25)
-        sleep(.1)
-    car.set_dir_servo_angle(0)
+        car.set_dir_servo_angle(-25, smooth=True)
+        sleep(.2)  # Increased delay for smoother action
+        car.set_dir_servo_angle(25, smooth=True)
+        sleep(.2)
+    car.set_dir_servo_angle(0, smooth=True)
 
 def resist(car):
     car.reset()
-    car.set_cam_tilt_angle(10)
+    car.set_cam_tilt_angle(10, smooth=True)
     for _ in range(3):
-        car.set_dir_servo_angle(-15)
-        car.set_cam_pan_angle(15)
-        sleep(.1)
-        car.set_dir_servo_angle(15)
+        car.set_dir_servo_angle(-15, smooth=False)  # Quick movements for resist
+        car.set_cam_pan_angle(15, smooth=False)
+        sleep(.15)  # Slightly longer delay
+        car.set_dir_servo_angle(15, smooth=False)
         car.set_cam_pan_angle(-15)
         sleep(.1)
     car.stop()
@@ -248,177 +251,203 @@ def resist(car):
     car.set_cam_pan_angle(0)
 
 def act_cute(car):
+    """Cute wiggling motion without violent head banging"""
     car.reset()
-    car.set_cam_tilt_angle(-20)
-    for i in range(15):
-        car.forward(5)
-        sleep(0.02)
-        car.backward(5)
-        sleep(0.02)
-    car.set_cam_tilt_angle(0)
-    car.stop()
+
+    # Gentle head tilt for cuteness
+    car.set_cam_tilt_angle(-10, smooth=True)  # Less extreme angle
+    sleep(.2)  # Let servo settle
+
+    # Gentle wiggling motion instead of violent forward/backward
+    for i in range(8):  # Fewer repetitions
+        # Gentle left wiggle
+        car.set_dir_servo_angle(-8, smooth=False)  # Small steering wiggle
+        sleep(0.15)  # Longer pauses for gentleness
+
+        # Gentle right wiggle
+        car.set_dir_servo_angle(8, smooth=False)
+        sleep(0.15)
+
+    # Return to center gently
+    car.set_dir_servo_angle(0, smooth=True)
+    car.set_cam_tilt_angle(0, smooth=True)  # Smooth return
+    sleep(.1)
 
 def rub_hands(car):
     car.reset()
     for i in range(5):
-        car.set_dir_servo_angle(-6)
-        sleep(.5)
-        car.set_dir_servo_angle(6)
-        sleep(.5)
-    car.reset()
+        car.set_dir_servo_angle(-6, smooth=False)  # Small movement
+        sleep(.6)  # Slightly longer
+        car.set_dir_servo_angle(6, smooth=False)
+        sleep(.6)
+    car.set_dir_servo_angle(0, smooth=True)  # Smooth return to center
+    car.set_cam_pan_angle(0, smooth=True)
+    car.set_cam_tilt_angle(0, smooth=True)
 
 def think(car):
     car.reset()
+    # Smooth thinking animation - gradual movements
     for i in range(11):
-        car.set_cam_pan_angle(i*3)
-        car.set_cam_tilt_angle(-i*2)
-        car.set_dir_servo_angle(i*2)
-        sleep(.05)
+        car.set_cam_pan_angle(i*3, smooth=False)  # Small increments don't need smoothing
+        car.set_cam_tilt_angle(-i*2, smooth=False)
+        car.set_dir_servo_angle(i*2, smooth=False)
+        sleep(.08)  # Slightly longer delay for less clicking
     sleep(1)
-    car.set_cam_pan_angle(15)
-    car.set_cam_tilt_angle(-10)
-    car.set_dir_servo_angle(10)
-    sleep(.1)
+    # Final position with smooth movement
+    car.set_cam_pan_angle(15, smooth=True)
+    car.set_cam_tilt_angle(-10, smooth=True)
+    car.set_dir_servo_angle(10, smooth=True)
+    sleep(.2)
     car.reset()
 
 def keep_think(car):
     car.reset()
+    # Smooth thinking animation - gradual movements
     for i in range(11):
-        car.set_cam_pan_angle(i*3)
-        car.set_cam_tilt_angle(-i*2)
-        car.set_dir_servo_angle(i*2)
-        sleep(.05)
-    # Reset to center position
-    car.reset()
+        car.set_cam_pan_angle(i*3, smooth=False)  # Small increments
+        car.set_cam_tilt_angle(-i*2, smooth=False)
+        car.set_dir_servo_angle(i*2, smooth=False)
+        sleep(.08)  # Slightly longer delay
+    # Reset to center position smoothly
+    car.set_cam_pan_angle(0, smooth=True)
+    car.set_cam_tilt_angle(0, smooth=True)
+    car.set_dir_servo_angle(0, smooth=True)
 
 def shake_head(car):
     car.stop()
-    car.set_cam_pan_angle(0)
-    car.set_cam_pan_angle(60)
+    car.set_cam_pan_angle(0, smooth=True)
+    sleep(.1)
+    car.set_cam_pan_angle(60, smooth=True)  # Large movement - smooth
+    sleep(.25)  # Longer delay
+    car.set_cam_pan_angle(-50, smooth=True)  # Large movement - smooth
     sleep(.2)
-    car.set_cam_pan_angle(-50)
-    sleep(.1)
-    car.set_cam_pan_angle(40)
-    sleep(.1)
-    car.set_cam_pan_angle(-30)
-    sleep(.1)
-    car.set_cam_pan_angle(20)
-    sleep(.1)
-    car.set_cam_pan_angle(-10)
-    sleep(.1)
-    car.set_cam_pan_angle(10)
-    sleep(.1)
-    car.set_cam_pan_angle(-5)
-    sleep(.1)
-    car.set_cam_pan_angle(0)
+    car.set_cam_pan_angle(40, smooth=True)
+    sleep(.15)
+    car.set_cam_pan_angle(-30, smooth=True)
+    sleep(.15)
+    car.set_cam_pan_angle(20, smooth=False)  # Smaller movements
+    sleep(.15)
+    car.set_cam_pan_angle(-10, smooth=False)
+    sleep(.15)
+    car.set_cam_pan_angle(10, smooth=False)
+    sleep(.15)
+    car.set_cam_pan_angle(-5, smooth=False)
+    sleep(.15)
+    car.set_cam_pan_angle(0, smooth=True)
 
 def nod(car):
     car.reset()
-    car.set_cam_tilt_angle(0)
-    car.set_cam_tilt_angle(5)
+    car.set_cam_tilt_angle(0, smooth=True)
     sleep(.1)
-    car.set_cam_tilt_angle(-30)
-    sleep(.1)
-    car.set_cam_tilt_angle(5)
-    sleep(.1)
-    car.set_cam_tilt_angle(-30)
-    sleep(.1)
-    car.set_cam_tilt_angle(0)
+    car.set_cam_tilt_angle(5, smooth=True)
+    sleep(.15)  # Longer delay for smoother action
+    car.set_cam_tilt_angle(-30, smooth=True)  # Large movement - use smoothing
+    sleep(.15)
+    car.set_cam_tilt_angle(5, smooth=True)
+    sleep(.15)
+    car.set_cam_tilt_angle(-30, smooth=True)
+    sleep(.15)
+    car.set_cam_tilt_angle(0, smooth=True)
 
 
 def depressed(car):
     car.reset()
-    car.set_cam_tilt_angle(0)
-    car.set_cam_tilt_angle(20)
-    sleep(.22)
-    car.set_cam_tilt_angle(-22)
+    car.set_cam_tilt_angle(0, smooth=True)
     sleep(.1)
-    car.set_cam_tilt_angle(10)
-    sleep(.1)
-    car.set_cam_tilt_angle(-22)
-    sleep(.1)
-    car.set_cam_tilt_angle(0)
-    sleep(.1)
-    car.set_cam_tilt_angle(-22)
-    sleep(.1)
-    car.set_cam_tilt_angle(-10)
-    sleep(.1)
-    car.set_cam_tilt_angle(-22)
-    sleep(.1)
-    car.set_cam_tilt_angle(-15)
-    sleep(.1)
-    car.set_cam_tilt_angle(-22)
-    sleep(.1)
-    car.set_cam_tilt_angle(-19)
-    sleep(.1)
-    car.set_cam_tilt_angle(-22)
-    sleep(.1)
+    car.set_cam_tilt_angle(20, smooth=True)  # Large movement - smooth
+    sleep(.25)
+    car.set_cam_tilt_angle(-22, smooth=True)  # Large movement - smooth
+    sleep(.15)
+    car.set_cam_tilt_angle(10, smooth=True)
+    sleep(.15)
+    car.set_cam_tilt_angle(-22, smooth=True)
+    sleep(.15)
+    car.set_cam_tilt_angle(0, smooth=True)
+    sleep(.15)
+    car.set_cam_tilt_angle(-22, smooth=True)
+    sleep(.15)
+    car.set_cam_tilt_angle(-10, smooth=False)  # Smaller movement
+    sleep(.15)
+    car.set_cam_tilt_angle(-22, smooth=False)
+    sleep(.15)
+    car.set_cam_tilt_angle(-15, smooth=False)  # Small adjustment
+    sleep(.15)
+    car.set_cam_tilt_angle(-22, smooth=False)
+    sleep(.15)
+    car.set_cam_tilt_angle(-19, smooth=False)  # Small adjustment
+    sleep(.15)
+    car.set_cam_tilt_angle(-22, smooth=False)
+    sleep(.15)
 
     sleep(1.5)
-    car.reset()
+    car.set_cam_tilt_angle(0, smooth=True)  # Smooth reset
+    car.set_cam_pan_angle(0, smooth=True)
+    car.set_dir_servo_angle(0, smooth=True)
 
 def twist_body(car):
     car.reset()
     for i in range(3):
         car.set_motor_speed(1, 20)
         car.set_motor_speed(2, 20)
-        car.set_cam_pan_angle(-20)
-        car.set_dir_servo_angle(-10)
-        sleep(.1)
+        car.set_cam_pan_angle(-20, smooth=True)  # Smooth movement
+        car.set_dir_servo_angle(-10, smooth=False)  # Small movement
+        sleep(.15)  # Longer delay
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
-        car.set_cam_pan_angle(0)
-        car.set_dir_servo_angle(0)
-        sleep(.1)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=False)
+        sleep(.15)
         car.set_motor_speed(1, -20)
         car.set_motor_speed(2, -20)
-        car.set_cam_pan_angle(20)
-        car.set_dir_servo_angle(10)
-        sleep(.1)
+        car.set_cam_pan_angle(20, smooth=True)  # Smooth movement
+        car.set_dir_servo_angle(10, smooth=False)  # Small movement
+        sleep(.15)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
-        car.set_cam_pan_angle(0)
-        car.set_dir_servo_angle(0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=False)
 
-        sleep(.1)
+        sleep(.15)
 
 
 def celebrate(car):
     car.reset()
-    car.set_cam_tilt_angle(20)
-
-    car.set_dir_servo_angle(30)
-    car.set_cam_pan_angle(60)
-    sleep(.3)
-    car.set_dir_servo_angle(10)
-    car.set_cam_pan_angle(30)
+    car.set_cam_tilt_angle(20, smooth=True)  # Large movement - smooth
     sleep(.1)
-    car.set_dir_servo_angle(30)
-    car.set_cam_pan_angle(60)
-    sleep(.3)
-    car.set_dir_servo_angle(0)
-    car.set_cam_pan_angle(0)
-    sleep(.2)
 
-    car.set_dir_servo_angle(-30)
-    car.set_cam_pan_angle(-60)
-    sleep(.3)
-    car.set_dir_servo_angle(-10)
-    car.set_cam_pan_angle(-30)
-    sleep(.1)
-    car.set_dir_servo_angle(-30)
-    car.set_cam_pan_angle(-60)
-    sleep(.3)
-    car.set_dir_servo_angle(0)
-    car.set_cam_pan_angle(0)
-    sleep(.2)
+    car.set_dir_servo_angle(30, smooth=True)  # Large movement - smooth
+    car.set_cam_pan_angle(60, smooth=True)   # Large movement - smooth
+    sleep(.35)
+    car.set_dir_servo_angle(10, smooth=True)
+    car.set_cam_pan_angle(30, smooth=True)
+    sleep(.15)
+    car.set_dir_servo_angle(30, smooth=True)
+    car.set_cam_pan_angle(60, smooth=True)
+    sleep(.35)
+    car.set_dir_servo_angle(0, smooth=True)
+    car.set_cam_pan_angle(0, smooth=True)
+    sleep(.25)
+
+    car.set_dir_servo_angle(-30, smooth=True)  # Large movement - smooth
+    car.set_cam_pan_angle(-60, smooth=True)    # Large movement - smooth
+    sleep(.35)
+    car.set_dir_servo_angle(-10, smooth=True)
+    car.set_cam_pan_angle(-30, smooth=True)
+    sleep(.15)
+    car.set_dir_servo_angle(-30, smooth=True)
+    car.set_cam_pan_angle(-60, smooth=True)
+    sleep(.35)
+    car.set_dir_servo_angle(0, smooth=True)
+    car.set_cam_pan_angle(0, smooth=True)
+    car.set_cam_tilt_angle(0, smooth=True)  # Return tilt to center
+    sleep(.25)
 
 def honk(car):
     print(f"Honk called with car object: {car}, has music: {hasattr(car, 'music')}")
     try:
         if hasattr(car, 'music'):
             print(f"Car music object: {car.music}")
-            car.music.sound_play("../sounds/car-double-horn.wav", 100)
+            car.music.sound_play("../../../audio/sounds/car-double-horn.wav", 100)
             while car.music.pygame.mixer.music.get_busy():
                 time.sleep(0.1)
         else:
@@ -426,12 +455,12 @@ def honk(car):
     except Exception as e:
         gray_print(f"Error playing honk sound: {e}")
 
-def start_engine(car):
+def rev_engine(car):
     print(f"Start engine called with car object: {car}, has music: {hasattr(car, 'music')}")
     try:
         if hasattr(car, 'music'):
             print(f"Car music object: {car.music}")
-            car.music.sound_play("../sounds/car-start-engine.wav", 50)
+            car.music.sound_play("../sounds/9qph2uvdcee-car-revving-sfx-7.mp3", 50)
             while car.music.pygame.mixer.music.get_busy():
                 time.sleep(0.1)
         else:
@@ -441,28 +470,44 @@ def start_engine(car):
 
 # Define dictionaries after all functions are defined
 actions_dict = {
+    # Basic movements
     "forward": move_forward_this_way,
     "backward": move_backward_this_way,
     "left": turn_left,
     "right": turn_right,
     "stop": stop,
+
+    # Twist movements (in-place turns)
     "twist left": turn_left_in_place,
     "twist right": turn_right_in_place,
-    #"come here": come_here,
-    "shake head": shake_head,
+
+    # Expression actions - UNDERSCORE versions (match prompt and function names)
+    "shake_head": shake_head,
     "nod": nod,
-    "wave hands": wave_hands,
+    "wave_hands": wave_hands,
     "resist": resist,
-    "act cute": act_cute,
-    "rub hands": rub_hands,
+    "act_cute": act_cute,
+    "rub_hands": rub_hands,
     "think": think,
-    "twist body": twist_body,
+    "keep_think": keep_think,
+    "twist_body": twist_body,
     "celebrate": celebrate,
     "depressed": depressed,
-    "think": think,
-    "keep think": keep_think,
+
+    # Sounds
     "honk": honk,
-    "start engine": start_engine
+    "start_engine": rev_engine,
+
+    # LEGACY SPACE versions for backward compatibility
+    "shake head": shake_head,
+    "wave hands": wave_hands,
+    "act cute": act_cute,
+    "rub hands": rub_hands,
+    "twist body": twist_body,
+    "keep think": keep_think,
+    "start engine": rev_engine,
+
+    #"come here": come_here,  # Commented out - not implemented
 }
 
 

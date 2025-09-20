@@ -9,7 +9,12 @@ import time
 import os
 import queue
 import threading
+import warnings
 from nevil_framework.base_node import NevilNode
+
+# Suppress ALSA warnings if environment variable is set
+if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
 from nevil_framework.busy_state import busy_state
 from audio.audio_output import AudioOutput
 

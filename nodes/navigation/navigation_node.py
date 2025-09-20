@@ -15,6 +15,21 @@ from typing import Dict, Any, List, Optional
 from nevil_framework.base_node import NevilNode
 from nevil_framework.busy_state import busy_state
 from robot_hat import reset_mcu
+
+# Import Automatic module for autonomous behavior
+try:
+    from .automatic import Automatic
+except ImportError:
+    try:
+        from automatic import Automatic
+    except ImportError:
+        import importlib.util
+        automatic_path = os.path.join(os.path.dirname(__file__), 'automatic.py')
+        spec = importlib.util.spec_from_file_location("automatic", automatic_path)
+        automatic_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(automatic_module)
+        Automatic = automatic_module.Automatic
+
 # Hardware interface - use local picarx.py
 try:
    from .calibration import servos_reset
@@ -109,6 +124,11 @@ class NavigationNode(NevilNode):
         self.actions_processed = 0
         self.last_action_time = 0
 
+        # Automatic mode
+        self.automatic = None
+        self.auto_enabled = False
+        self.auto_thread = None
+
     def initialize(self):
         """Initialize navigation and hardware"""
         print(f"[NAVIGATION DEBUG] initialize() called - logger available: {hasattr(self, 'logger')}")
@@ -154,6 +174,46 @@ class NavigationNode(NevilNode):
             daemon=True
         )
         self.action_thread.start()
+
+        # Initialize Automatic module with a mock nevil object
+        # The automatic module needs access to certain methods
+        class MockNevil:
+            def __init__(self, nav_node):
+                self.nav = nav_node
+                self.auto_enabled = False
+                self.action_lock = threading.Lock()
+                self.speech_lock = threading.Lock()
+                self.actions_to_be_done = []
+                self.action_status = None
+                self.speech_loaded = False
+                self.sound_effects_queue = []
+                self.tts_file = None
+
+            def handle_TTS_generation(self, message):
+                """Queue TTS for speech node"""
+                self.nav.logger.info(f"[AUTO] TTS: {message}")
+                self.nav.publish("tts_request", {
+                    "text": message,
+                    "priority": 50
+                })
+
+            def call_GPT(self, prompt, use_image=False):
+                """Call GPT for auto mode responses"""
+                # For now, return a simple response
+                # In full implementation, this would call the AI cognition node
+                actions = []
+                message = "Hmm, interesting!"
+                return actions, message
+
+            def parse_action(self, action_str):
+                """Parse action string"""
+                parts = action_str.split()
+                if parts:
+                    return parts[0], parts[1:]
+                return None, []
+
+        self.mock_nevil = MockNevil(self)
+        self.automatic = Automatic(self.mock_nevil)
 
         self.logger.info("Navigation Node initialization complete")
 
@@ -405,6 +465,30 @@ class NavigationNode(NevilNode):
     def on_robot_action(self, message):
         """Handle robot action messages from AI cognition"""
         self.logger.info(f"📨 [MESSAGE] RECEIVED robot action message")
+
+        # Check for auto mode triggers in source text
+        source_text = message.data.get('source_text', '').lower()
+
+        # Auto mode triggers
+        auto_triggers = ['start auto', 'go play', 'seeya nevil', 'see ya nevil',
+                        'auto mode', 'automatic mode', 'go have fun', 'go explore',
+                        'entertain yourself', 'do your thing']
+        stop_triggers = ['stop auto', 'stop playing', 'come back', 'stop automatic',
+                        'manual mode', 'stop exploring']
+
+        # Check for auto mode commands
+        for trigger in auto_triggers:
+            if trigger in source_text:
+                self.logger.info(f"🤖 [AUTO] Auto mode triggered by: '{trigger}'")
+                self.start_auto_mode()
+                # Still process any immediate actions before going auto
+                break
+
+        for trigger in stop_triggers:
+            if trigger in source_text:
+                self.logger.info(f"🛑 [AUTO] Auto mode stopped by: '{trigger}'")
+                self.stop_auto_mode()
+                break
         self.logger.debug(f"📨 [MESSAGE] Full message object: {message}")
         self.logger.debug(f"📨 [MESSAGE] Message type: {type(message)}")
         self.logger.debug(f"📨 [MESSAGE] Message attributes: {dir(message)}")
@@ -496,9 +580,169 @@ class NavigationNode(NevilNode):
 
         return stats
 
+    def start_auto_mode(self):
+        """Start automatic autonomous behavior"""
+        if self.auto_enabled:
+            self.logger.info("[AUTO] Already in auto mode")
+            print("\n[AUTOMATIC MODE] ⚠️ Already active!")
+            return
+
+        print("\n" + "="*70)
+        print("🤖 [AUTOMATIC MODE] ACTIVATING...")
+        print(f"🎭 Current Mood: {self.automatic.current_mood_name.upper()}")
+        print("📝 Commands:")
+        print("  • Say 'Stop auto' or 'Come back' to exit")
+        print("  • Say 'Set mood [playful/curious/sleepy/etc]' to change personality")
+        print("="*70 + "\n")
+
+        self.logger.info("🚀 [AUTO] Starting autonomous mode")
+        self.auto_enabled = True
+        self.mock_nevil.auto_enabled = True
+
+        # Start auto thread
+        self.auto_thread = threading.Thread(
+            target=self.run_auto,
+            daemon=True
+        )
+        self.auto_thread.start()
+
+        # Publish status
+        self.publish("auto_mode_status", {
+            "enabled": True,
+            "mood": self.automatic.current_mood_name,
+            "timestamp": time.time()
+        })
+
+        # Send TTS confirmation
+        self.publish("tts_request", {
+            "text": "Okay, I'll go play now!",
+            "priority": 10
+        })
+
+    def stop_auto_mode(self):
+        """Stop automatic autonomous behavior"""
+        if not self.auto_enabled:
+            self.logger.info("[AUTO] Not in auto mode")
+            print("\n[AUTOMATIC MODE] ℹ️ Not currently active")
+            return
+
+        print("\n" + "="*60)
+        print("🛑 [AUTOMATIC MODE] DEACTIVATING...")
+        print("Returning to manual control")
+        print("="*60 + "\n")
+
+        self.logger.info("🛑 [AUTO] Stopping autonomous mode")
+        self.auto_enabled = False
+        self.mock_nevil.auto_enabled = False
+
+        # Wait for thread to stop
+        if self.auto_thread and self.auto_thread.is_alive():
+            self.auto_thread.join(timeout=2.0)
+
+        # Publish status
+        self.publish("auto_mode_status", {
+            "enabled": False,
+            "timestamp": time.time()
+        })
+
+        # Send TTS confirmation
+        self.publish("tts_request", {
+            "text": "I'm back!",
+            "priority": 10
+        })
+
+    def run_auto(self):
+        """Run autonomous behavior loop"""
+        self.logger.info("[AUTO] Autonomous thread started")
+
+        while self.auto_enabled and not self.shutdown_event.is_set():
+            try:
+                # Update last interaction time when we get messages
+                self.automatic.last_interaction_time = self.last_action_time
+
+                # Run one cycle of autonomous behavior
+                cycles = self.automatic.get_cycle_count()
+                self.logger.info(f"[AUTO] Running {cycles} autonomous cycles")
+
+                for cycle in range(cycles):
+                    if not self.auto_enabled:
+                        break
+
+                    self.automatic.run_idle_loop(1)
+
+                    # Process any actions queued by automatic
+                    with self.mock_nevil.action_lock:
+                        if self.mock_nevil.actions_to_be_done:
+                            actions = self.mock_nevil.actions_to_be_done
+                            self.mock_nevil.actions_to_be_done = []
+
+                            # Queue actions for execution
+                            action_sequence = {
+                                'actions': actions,
+                                'source_text': f'Auto mode ({self.automatic.current_mood_name})',
+                                'mood': self.automatic.current_mood_name,
+                                'timestamp': time.time()
+                            }
+                            self.action_queue.put((50, time.time(), action_sequence))
+
+                # Wait a bit before next cycle set
+                time.sleep(2.0)
+
+            except Exception as e:
+                self.logger.error(f"[AUTO] Error in auto loop: {e}")
+                time.sleep(1.0)
+
+        self.logger.info("[AUTO] Autonomous thread stopped")
+
+    def on_auto_mode_command(self, message):
+        """Handle direct auto mode commands from speech recognition"""
+        try:
+            command = message.data.get('command', '')
+            trigger = message.data.get('trigger', '')
+            original_text = message.data.get('original_text', '')
+
+            self.logger.info(f"🎯 [AUTO COMMAND] Received: {command} (trigger: '{trigger}', text: '{original_text}')")
+
+            if command == 'start':
+                self.start_auto_mode()
+            elif command == 'stop':
+                self.stop_auto_mode()
+            else:
+                self.logger.warning(f"Unknown auto mode command: {command}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling auto mode command: {e}")
+
+    def on_mood_command(self, message):
+        """Handle mood change commands"""
+        try:
+            # Extract mood from message
+            text = message.data.get('text', '').lower()
+
+            # Check for mood commands
+            moods = ['playful', 'brooding', 'curious', 'melancholic',
+                    'zippy', 'lonely', 'mischievous', 'sleepy']
+
+            for mood in moods:
+                if mood in text:
+                    if self.automatic and self.automatic.set_mood(mood):
+                        self.logger.info(f"[AUTO] Mood changed to: {mood}")
+                        self.publish("tts_request", {
+                            "text": f"Feeling {mood} now!",
+                            "priority": 10
+                        })
+                    break
+
+        except Exception as e:
+            self.logger.error(f"Error handling mood command: {e}")
+
     def cleanup(self):
         """Cleanup navigation resources"""
         self.logger.info("Cleaning up Navigation Node...")
+
+        # Stop auto mode if running
+        if self.auto_enabled:
+            self.stop_auto_mode()
 
         # Stop action processing
         if hasattr(self, 'action_thread') and self.action_thread.is_alive():

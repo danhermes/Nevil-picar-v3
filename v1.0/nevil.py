@@ -1,5 +1,9 @@
 import warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
+import os
+
+# Suppress ALSA warnings if environment variable is set
+if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
 
 import signal
 import atexit

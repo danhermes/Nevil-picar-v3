@@ -77,6 +77,29 @@ subscribes:
         required: false
         description: "Additional context for mood change"
 
+  - topic: "auto_mode_command"
+    message_type: "AutoModeCommand"
+    callback: "on_auto_mode_command"
+    description: "Direct auto mode commands from speech recognition"
+    schema:
+      command:
+        type: "string"
+        required: true
+        description: "Auto mode command to execute"
+        allowed: ["start", "stop"]
+      trigger:
+        type: "string"
+        required: true
+        description: "Trigger phrase that activated the command"
+      original_text:
+        type: "string"
+        required: true
+        description: "Original speech text that contained the trigger"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp when command was detected"
+
 # Node configuration
 configuration:
   # Movement settings

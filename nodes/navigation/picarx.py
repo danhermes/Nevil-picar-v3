@@ -40,8 +40,8 @@ class Picarx(object):
     # grayscale_pins: 3 adc channels
     # ultrasonic_pins: trig, echo2
     # config: path of config file
-    def __init__(self, 
-                servo_pins:list=['P0', 'P1', 'P2'], 
+    def __init__(self,
+                servo_pins:list=['P0', 'P1', 'P2'],
                 motor_pins:list=['D4', 'D5', 'P13', 'P12'],
                 grayscale_pins:list=['A0', 'A1', 'A2'],
                 ultrasonic_pins:list=['D2','D3'],
@@ -50,7 +50,7 @@ class Picarx(object):
 
         # reset robot_hat
         reset_mcu()
-        time.sleep(0.2)
+        time.sleep(0.5)  # Increased delay for proper initialization
 
         # --------- config_flie ---------
         self.config_flie = fileDB(config)
@@ -63,10 +63,18 @@ class Picarx(object):
         self.dir_cali_val = float(self.config_flie.get("picarx_dir_servo", default_value=0))
         self.cam_pan_cali_val = float(self.config_flie.get("picarx_cam_pan_servo", default_value=0))
         self.cam_tilt_cali_val = float(self.config_flie.get("picarx_cam_tilt_servo", default_value=0))
-        # set servos to init angle
+        # set servos to init angle with delay between movements
         self.dir_servo_pin.angle(self.dir_cali_val)
+        time.sleep(0.1)
         self.cam_pan.angle(self.cam_pan_cali_val)
+        time.sleep(0.1)
         self.cam_tilt.angle(self.cam_tilt_cali_val)
+        time.sleep(0.1)
+
+        # Track current servo positions for smooth movements
+        self.current_dir_angle = self.dir_cali_val
+        self.current_pan_angle = self.cam_pan_cali_val
+        self.current_tilt_angle = self.cam_tilt_cali_val
 
         # --------- motors init ---------
         self.left_rear_dir_pin = Pin(motor_pins[0])
@@ -120,6 +128,10 @@ class Picarx(object):
         # These values are used by action_helper.py for obstacle detection
         self.SafeDistance = 100   # Distance in cm considered safe for movement
         self.DangerDistance = 50  # Distance in cm considered dangerous
+
+        # --------- default speed setting ---------
+        # Default speed for movements when not specified
+        self.speed = 50  # Default speed (0-100)
         
     def set_motor_speed(self, motor, speed):
         ''' set motor speed
@@ -176,10 +188,26 @@ class Picarx(object):
         self.config_flie.set("picarx_dir_servo", "%s"%value)
         self.dir_servo_pin.angle(value)
 
-    def set_dir_servo_angle(self, value):
-        self.dir_current_angle = constrain(value, self.DIR_MIN, self.DIR_MAX)
-        angle_value  = self.dir_current_angle + self.dir_cali_val
-        self.dir_servo_pin.angle(angle_value)
+    def set_dir_servo_angle(self, value, smooth=True, steps=5):
+        '''Set direction servo angle with optional smooth movement'''
+        target_angle = constrain(value, self.DIR_MIN, self.DIR_MAX)
+
+        if smooth and abs(target_angle - self.dir_current_angle) > 5:
+            # Smooth movement for large angle changes
+            current = self.dir_current_angle
+            step_size = (target_angle - current) / steps
+
+            for i in range(steps):
+                intermediate = current + (step_size * (i + 1))
+                angle_value = intermediate + self.dir_cali_val
+                self.dir_servo_pin.angle(angle_value)
+                time.sleep(0.02)  # Small delay for smooth movement
+        else:
+            # Direct movement for small changes
+            angle_value = target_angle + self.dir_cali_val
+            self.dir_servo_pin.angle(angle_value)
+
+        self.dir_current_angle = target_angle
 
     def cam_pan_servo_calibrate(self, value):
         self.cam_pan_cali_val = value
@@ -191,13 +219,47 @@ class Picarx(object):
         self.config_flie.set("picarx_cam_tilt_servo", "%s"%value)
         self.cam_tilt.angle(value)
 
-    def set_cam_pan_angle(self, value):
-        value = constrain(value, self.CAM_PAN_MIN, self.CAM_PAN_MAX)
-        self.cam_pan.angle(-1*(value + -1*self.cam_pan_cali_val))
+    def set_cam_pan_angle(self, value, smooth=True, steps=5):
+        '''Set camera pan angle with optional smooth movement'''
+        target_angle = constrain(value, self.CAM_PAN_MIN, self.CAM_PAN_MAX)
 
-    def set_cam_tilt_angle(self,value):
-        value = constrain(value, self.CAM_TILT_MIN, self.CAM_TILT_MAX)
-        self.cam_tilt.angle(-1*(value + -1*self.cam_tilt_cali_val))
+        if smooth and hasattr(self, 'current_pan_angle'):
+            if abs(target_angle - self.current_pan_angle) > 10:
+                # Smooth movement for large angle changes
+                current = self.current_pan_angle
+                step_size = (target_angle - current) / steps
+
+                for i in range(steps):
+                    intermediate = current + (step_size * (i + 1))
+                    self.cam_pan.angle(-1*(intermediate + -1*self.cam_pan_cali_val))
+                    time.sleep(0.02)
+            else:
+                self.cam_pan.angle(-1*(target_angle + -1*self.cam_pan_cali_val))
+        else:
+            self.cam_pan.angle(-1*(target_angle + -1*self.cam_pan_cali_val))
+
+        self.current_pan_angle = target_angle
+
+    def set_cam_tilt_angle(self, value, smooth=True, steps=5):
+        '''Set camera tilt angle with optional smooth movement'''
+        target_angle = constrain(value, self.CAM_TILT_MIN, self.CAM_TILT_MAX)
+
+        if smooth and hasattr(self, 'current_tilt_angle'):
+            if abs(target_angle - self.current_tilt_angle) > 10:
+                # Smooth movement for large angle changes
+                current = self.current_tilt_angle
+                step_size = (target_angle - current) / steps
+
+                for i in range(steps):
+                    intermediate = current + (step_size * (i + 1))
+                    self.cam_tilt.angle(-1*(intermediate + -1*self.cam_tilt_cali_val))
+                    time.sleep(0.02)
+            else:
+                self.cam_tilt.angle(-1*(target_angle + -1*self.cam_tilt_cali_val))
+        else:
+            self.cam_tilt.angle(-1*(target_angle + -1*self.cam_tilt_cali_val))
+
+        self.current_tilt_angle = target_angle
 
     def set_power(self, speed):
         self.set_motor_speed(1, speed)
@@ -239,12 +301,22 @@ class Picarx(object):
 
     def stop(self):
         '''
-        Execute twice to make sure it stops
+        Gradually reduce speed to stop smoothly
         '''
-        for _ in range(2):
-            self.motor_speed_pins[0].pulse_width_percent(0)
-            self.motor_speed_pins[1].pulse_width_percent(0)
-            time.sleep(0.002)
+        # Get current speeds (approximate)
+        for speed_reduction in [50, 25, 0]:
+            if speed_reduction > 0:
+                self.motor_speed_pins[0].pulse_width_percent(speed_reduction)
+                self.motor_speed_pins[1].pulse_width_percent(speed_reduction)
+                time.sleep(0.05)
+            else:
+                # Final stop
+                self.motor_speed_pins[0].pulse_width_percent(0)
+                self.motor_speed_pins[1].pulse_width_percent(0)
+                time.sleep(0.01)
+                # Ensure complete stop
+                self.motor_speed_pins[0].pulse_width_percent(0)
+                self.motor_speed_pins[1].pulse_width_percent(0)
 
     def get_distance(self):
         return self.ultrasonic.read()

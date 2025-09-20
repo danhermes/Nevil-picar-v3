@@ -10,7 +10,12 @@ import time
 import queue
 import threading
 import logging
+import warnings
 import speech_recognition as sr
+
+# Suppress ALSA warnings if environment variable is set
+if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
 
 
 class AudioInput:
@@ -34,8 +39,9 @@ class AudioInput:
 
         # v1.0 EXACT parameters - DO NOT MODIFY
         self.recognizer = sr.Recognizer()
-
-        self.recognizer.energy_threshold = 1000  # Audio energy level for speech detection (50-4000) - LOWER = more sensitive to ambient noise
+        
+        self.recognizer.dynamic_energy_threshold = False
+        self.recognizer.energy_threshold = 1600  # Audio energy level for speech detection (50-4000) - LOWER = more sensitive to ambient noise
         self.recognizer.dynamic_energy_adjustment_damping = 0.1  # Rate of dynamic energy threshold adjustment (0.0-1.0) - controls adaptation speed
         self.recognizer.dynamic_energy_ratio = 1.2  # Ratio for dynamic energy adjustment - multiplier for energy threshold changes
         self.recognizer.pause_threshold = 0.5  # Seconds of silence to mark phrase end - SHORTER = more responsive but may cut off speech
@@ -225,6 +231,7 @@ class AudioInput:
                     # Calculate audio length in seconds
                     audio_length = len(audio.frame_data) / (audio.sample_rate * audio.sample_width)
                     self.logger.debug(f"✓✓✓✓✓✓✓✓✓✓✓ -- Speech captured ({audio_length:.2f}s) -- ✓✓✓✓✓✓✓✓✓✓✓")
+                    self.logger.debug(f"Audio energy threshold: {self.recognizer.energy_threshold}")
                     return audio
 
         except sr.WaitTimeoutError:

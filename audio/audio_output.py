@@ -8,7 +8,12 @@ Preserves exact v1.0 TTS pipeline and playback behavior.
 import os
 import time
 import threading
+import warnings
 from robot_hat import Music
+
+# Suppress ALSA warnings if environment variable is set
+if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
 from .audio_utils import play_audio_file, generate_tts_filename, ensure_tts_directory
 
 

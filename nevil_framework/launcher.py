@@ -15,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import logging
 from datetime import datetime
+import subprocess
+import tempfile
 
 from .config_loader import ConfigLoader
 from .message_bus import MessageBus
@@ -273,10 +275,195 @@ class NevilLauncher:
             print(f"[Launcher] Error loading node {node_name}: {e}")
             return False
 
+    def configure_audio_devices(self) -> bool:
+        """
+        Dynamically configure ALSA audio devices using i2samp approach.
+        Finds the HiFiBerry DAC card and generates proper asound.conf.
+        """
+        try:
+            self.logger.info("Configuring audio devices...")
+
+            # Target audio card name (from i2samp script)
+            audio_card_name = "sndrpihifiberry"
+            asound_conf_path = os.path.expanduser("~/.asoundrc")
+
+            # Find the card number for HiFiBerry DAC
+            self.logger.debug("Searching for HiFiBerry DAC card...")
+            try:
+                # Run aplay -l and parse output to find card number
+                result = subprocess.run(['aplay', '-l'], capture_output=True, text=True, check=True)
+                card_num = None
+
+                for line in result.stdout.split('\n'):
+                    if audio_card_name in line:
+                        # Extract card number from line like "card 2: sndrpihifiberry"
+                        parts = line.split()
+                        for i, part in enumerate(parts):
+                            if part == 'card' and i + 1 < len(parts):
+                                card_num = parts[i + 1].rstrip(':')
+                                break
+                        break
+
+                if card_num is None:
+                    self.logger.warning(f"Audio card '{audio_card_name}' not found, using default audio")
+                    return True  # Not an error, just use system default
+
+                self.logger.info(f"Found HiFiBerry DAC at card {card_num}")
+
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Failed to run aplay -l: {e}")
+                return False
+            except Exception as e:
+                self.logger.error(f"Error finding audio card: {e}")
+                return False
+
+            # Generate ALSA configuration (based on i2samp auto_sound_card script)
+            asound_config = f"""pcm.speakerbonnet {{
+    type hw card {card_num}
+}}
+
+pcm.dmixer {{
+    type dmix
+    ipc_key 1024
+    ipc_perm 0666
+    slave {{
+        pcm "speakerbonnet"
+        period_time 0
+        period_size 1024
+        buffer_size 8192
+        rate 44100
+        channels 2
+    }}
+}}
+
+ctl.dmixer {{
+    type hw card {card_num}
+}}
+
+pcm.softvol {{
+    type softvol
+    slave.pcm "dmixer"
+    control.name "PCM"
+    control.card {card_num}
+}}
+
+ctl.softvol {{
+    type hw card {card_num}
+}}
+
+pcm.!default {{
+    type             plug
+    slave.pcm       "softvol"
+}}
+"""
+
+            # Backup existing configuration
+            if os.path.exists(asound_conf_path):
+                backup_path = f"{asound_conf_path}.backup"
+                try:
+                    with open(asound_conf_path, 'r') as src, open(backup_path, 'w') as dst:
+                        dst.write(src.read())
+                    self.logger.info(f"Backed up existing .asoundrc to {backup_path}")
+                except Exception as e:
+                    self.logger.warning(f"Could not backup .asoundrc: {e}")
+
+            # Write new configuration
+            try:
+                with open(asound_conf_path, 'w') as f:
+                    f.write(asound_config)
+                self.logger.info(f"Generated new ALSA configuration at {asound_conf_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to write ALSA configuration: {e}")
+                return False
+
+            # Enable speaker switch (pin 20)
+            try:
+                self.logger.debug("Enabling speaker switch (pin 20)...")
+                subprocess.run(['pinctrl', 'set', '20', 'op', 'dh'], check=True,
+                             capture_output=True)
+                self.logger.info("Speaker switch enabled")
+            except subprocess.CalledProcessError as e:
+                self.logger.warning(f"Failed to enable speaker switch: {e}")
+                # Not a fatal error, continue
+
+            # Restart any audio services that depend on ALSA config
+            self._restart_audio_services()
+
+            self.logger.info("Audio device configuration completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error configuring audio devices: {e}")
+            return False
+
+    def _restart_audio_services(self):
+        """
+        Restart audio-related services to pick up new ALSA configuration.
+        Based on i2samp script approach.
+        """
+        try:
+            # Restart aplay service if it exists (from i2samp setup)
+            self.logger.debug("Checking for aplay service...")
+            result = subprocess.run(['systemctl', 'is-active', 'aplay.service'],
+                                  capture_output=True, text=True)
+
+            if result.returncode == 0 and 'active' in result.stdout:
+                self.logger.info("Restarting aplay service...")
+                subprocess.run(['sudo', 'systemctl', 'restart', 'aplay.service'],
+                             check=False, capture_output=True)
+
+            # Force reload of ALSA configuration in current process
+            self._reload_alsa_in_process()
+
+        except Exception as e:
+            self.logger.warning(f"Error restarting audio services: {e}")
+
+    def _reload_alsa_in_process(self):
+        """
+        Force the current process to reload ALSA configuration.
+        This ensures pygame/robot_hat Music() will use the new settings.
+        """
+        try:
+            # Clear any ALSA configuration cache
+            # This forces ALSA to re-read configuration files
+            import ctypes
+            import ctypes.util
+
+            # Try to load ALSA library and call snd_config_update
+            alsa_lib = ctypes.util.find_library('asound')
+            if alsa_lib:
+                libasound = ctypes.CDLL(alsa_lib)
+                if hasattr(libasound, 'snd_config_update_free_global'):
+                    libasound.snd_config_update_free_global()
+                    self.logger.debug("Cleared ALSA configuration cache")
+
+                if hasattr(libasound, 'snd_config_update'):
+                    result = libasound.snd_config_update()
+                    if result == 0:
+                        self.logger.debug("Reloaded ALSA configuration")
+                    else:
+                        self.logger.warning(f"ALSA config reload returned: {result}")
+
+            # Also try environment variable approach
+            # Force ALSA to re-read config by clearing cache
+            if 'ALSA_CONFIG_DIR' not in os.environ:
+                os.environ['ALSA_CONFIG_DIR'] = '/usr/share/alsa'
+
+            self.logger.info("ALSA configuration reload attempted")
+
+        except Exception as e:
+            self.logger.warning(f"Could not reload ALSA in process: {e}")
+            self.logger.info("Audio configuration will take effect on next restart")
+
     def start_system(self) -> bool:
         """Start the entire Nevil system"""
         try:
             print("[Launcher] Starting Nevil v3.0 system...")
+
+            # Configure audio devices first (before starting audio nodes)
+            self.logger.info("Configuring audio devices...")
+            if not self.configure_audio_devices():
+                self.logger.warning("Audio configuration failed, continuing with defaults")
 
             # Discover and load nodes
             if not self.discover_and_load_nodes():

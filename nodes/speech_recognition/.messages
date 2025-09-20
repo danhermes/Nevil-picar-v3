@@ -48,11 +48,29 @@ publishes:
         required: true
         description: "Audio level (0.0 to 1.0)"
         min: 0.0
-        max: 1.0
+
+  - topic: "auto_mode_command"
+    message_type: "AutoModeCommand"
+    description: "Direct auto mode commands detected in speech"
+    frequency: "on_demand"
+    schema:
+      command:
+        type: "string"
+        required: true
+        description: "Auto mode command to execute"
+        allowed: ["start", "stop"]
+      trigger:
+        type: "string"
+        required: true
+        description: "Trigger phrase that activated the command"
+      original_text:
+        type: "string"
+        required: true
+        description: "Original speech text that contained the trigger"
       timestamp:
         type: "float"
         required: true
-        description: "Unix timestamp of measurement"
+        description: "Unix timestamp when command was detected"
 
   - topic: "listening_status"
     message_type: "ListeningStatus"

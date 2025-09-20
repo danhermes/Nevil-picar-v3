@@ -1,8 +1,11 @@
 import random
 import time
 import warnings
+import os
 
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
+# Suppress ALSA warnings if environment variable is set
+if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
 
 # Actions: forward, backward, left, right, stop, twist left, twist right, come here, shake head, 
 #    nod, wave hands, resist, act cute, rub hands, think, twist body, celebrate, depressed, keep think

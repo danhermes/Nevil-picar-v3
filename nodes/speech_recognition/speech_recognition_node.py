@@ -211,6 +211,39 @@ class SpeechRecognitionNode(NevilNode):
             text = self.speech_to_text(audio, language)
 
             if text and text.strip():
+                # Check for auto mode triggers BEFORE AI processing
+                text_lower = text.strip().lower()
+                auto_triggers = ['start auto', 'go play', 'seeya nevil', 'see ya nevil',
+                               'auto mode', 'automatic mode', 'go have fun', 'go explore',
+                               'entertain yourself', 'do your thing']
+                stop_triggers = ['stop auto', 'stop playing', 'come back', 'stop automatic',
+                               'manual mode', 'stop exploring']
+
+                # Check for auto mode triggers
+                for trigger in auto_triggers:
+                    if trigger in text_lower:
+                        self.logger.info(f"🤖 [AUTO TRIGGER] Detected: '{trigger}' in '{text}'")
+                        # Publish direct auto command to navigation
+                        self.publish("auto_mode_command", {
+                            "command": "start",
+                            "trigger": trigger,
+                            "original_text": text.strip(),
+                            "timestamp": time.time()
+                        })
+                        return  # Don't process through AI, just trigger auto mode
+
+                for trigger in stop_triggers:
+                    if trigger in text_lower:
+                        self.logger.info(f"🛑 [AUTO TRIGGER] Detected: '{trigger}' in '{text}'")
+                        # Publish direct auto command to navigation
+                        self.publish("auto_mode_command", {
+                            "command": "stop",
+                            "trigger": trigger,
+                            "original_text": text.strip(),
+                            "timestamp": time.time()
+                        })
+                        return  # Don't process through AI, just stop auto mode
+
                 # STEP 3: Calculate metrics and publish to AI
                 recognition_time = time.time() - recognition_start
                 confidence = self._estimate_confidence(text, recognition_time)

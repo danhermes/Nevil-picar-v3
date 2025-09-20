@@ -5,3 +5,5 @@ audio/nevil_wavs/
 logs/
 tts/
 images/
+audio/sounds/
+*.pyc
