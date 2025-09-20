@@ -1,16 +1,13 @@
 import random
 import time
 import warnings
-import os
 
-# Suppress ALSA warnings if environment variable is set
-if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
-    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
 
 # Actions: forward, backward, left, right, stop, twist left, twist right, come here, shake head, 
 #    nod, wave hands, resist, act cute, rub hands, think, twist body, celebrate, depressed, keep think
 #
-# Sounds: honk, start engine
+# Sounds: honk, rev engine
 
 # -----------------------
 # Main Auto Class
@@ -215,7 +212,7 @@ class Automatic:
         volume = mood["volume"]
 
         if volume > 50:
-            actions.append("start engine")
+            actions.append("rev engine")
         actions.append("left")
         
         if whimsy > 60:
@@ -234,7 +231,7 @@ class Automatic:
         volume = mood["volume"]
 
         if volume > 50:
-            actions.append("start engine")
+            actions.append("rev engine")
         speed = min(50, int(30 + energy * 0.9))
         actions.append(f"backward {speed} 40")
 
