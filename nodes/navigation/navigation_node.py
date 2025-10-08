@@ -128,6 +128,7 @@ class NavigationNode(NevilNode):
         self.automatic = None
         self.auto_enabled = False
         self.auto_thread = None
+        self.shutdown_event = threading.Event()
 
     def initialize(self):
         """Initialize navigation and hardware"""
@@ -142,7 +143,9 @@ class NavigationNode(NevilNode):
 
         print(f"[NAVIGATION DEBUG] Creating Picarx object...")
         self.car = Picarx()
-        print(f"[NAVIGATION DEBUG] Picarx object created")
+        # Add reference to navigation node so actions can publish messages
+        self.car.nav_node = self
+        print(f"[NAVIGATION DEBUG] Picarx object created with nav_node reference")
 
         # Set default speed
         self.car.speed = self.default_speed
@@ -361,6 +364,24 @@ class NavigationNode(NevilNode):
                     'name': f"{action_name} {distance}cm @ {speed}"
                 }
                 self.logger.info(f"✅ [PARSE] Parameterized action parsed: {result['name']}")
+                return result
+
+            # Handle parameterized sound actions
+            elif action_name == 'play_sound' and len(parts) > 1:
+                self.logger.info(f"🔍 [PARSE] Processing parameterized sound: {action_name}")
+                sound_name = parts[1]
+                volume = int(parts[2]) if len(parts) > 2 else 100
+
+                function = self.action_functions.get(action_name)
+                self.logger.info(f"🔍 [PARSE] Sound function found: {function is not None}")
+                self.logger.debug(f"🔍 [PARSE] Sound: {sound_name}, Volume: {volume}")
+
+                result = {
+                    'function': function,
+                    'params': {'sound_name': sound_name, 'volume': volume},
+                    'name': f"{action_name} {sound_name} @ {volume}%"
+                }
+                self.logger.info(f"✅ [PARSE] Parameterized sound parsed: {result['name']}")
                 return result
 
             # Handle simple actions
@@ -660,33 +681,49 @@ class NavigationNode(NevilNode):
                 # Update last interaction time when we get messages
                 self.automatic.last_interaction_time = self.last_action_time
 
-                # Run one cycle of autonomous behavior
-                cycles = self.automatic.get_cycle_count()
-                self.logger.info(f"[AUTO] Running {cycles} autonomous cycles")
+                # Run one autonomous behavior cycle
+                self.logger.info(f"[AUTO] Running autonomous behavior cycle (mood: {self.automatic.current_mood_name})")
 
-                for cycle in range(cycles):
-                    if not self.auto_enabled:
-                        break
+                self.automatic.run_idle_loop(1)
 
-                    self.automatic.run_idle_loop(1)
+                # Process any actions queued by automatic
+                with self.mock_nevil.action_lock:
+                    if self.mock_nevil.actions_to_be_done:
+                        actions = self.mock_nevil.actions_to_be_done
+                        self.mock_nevil.actions_to_be_done = []
 
-                    # Process any actions queued by automatic
-                    with self.mock_nevil.action_lock:
-                        if self.mock_nevil.actions_to_be_done:
-                            actions = self.mock_nevil.actions_to_be_done
-                            self.mock_nevil.actions_to_be_done = []
+                        # Queue actions for execution
+                        action_sequence = {
+                            'actions': actions,
+                            'source_text': f'Auto mode ({self.automatic.current_mood_name})',
+                            'mood': self.automatic.current_mood_name,
+                            'timestamp': time.time()
+                        }
+                        self.action_queue.put((50, time.time(), action_sequence))
 
-                            # Queue actions for execution
-                            action_sequence = {
-                                'actions': actions,
-                                'source_text': f'Auto mode ({self.automatic.current_mood_name})',
-                                'mood': self.automatic.current_mood_name,
-                                'timestamp': time.time()
-                            }
-                            self.action_queue.put((50, time.time(), action_sequence))
+                        # Wait for actions to complete before running next behavior
+                        self.logger.info("[AUTO] Waiting for actions to complete...")
+                        while not self.action_queue.empty() and self.auto_enabled:
+                            time.sleep(0.5)
+                        self.logger.info("[AUTO] Actions completed, ready for next cycle")
 
-                # Wait a bit before next cycle set
-                time.sleep(2.0)
+                # Signal listening window with head gesture
+                if self.auto_enabled and self.car:
+                    self.logger.info("[AUTO] 👂 Listening window - signaling with head gesture")
+                    # Tilt head way back and look right
+                    self.car.set_cam_tilt_angle(30)  # Tilt way back
+                    self.car.set_cam_pan_angle(30)   # Look right
+                    time.sleep(0.3)  # Hold pose briefly
+
+                    # Speech recognition window
+                    time.sleep(2.0)  # 2 second window for speech commands
+
+                    # Return to center position
+                    self.car.set_cam_pan_angle(0)    # Center
+                    self.car.set_cam_tilt_angle(10)  # Normal tilt
+                else:
+                    # Just the delay if no hardware
+                    time.sleep(2.0)
 
             except Exception as e:
                 self.logger.error(f"[AUTO] Error in auto loop: {e}")
@@ -697,6 +734,9 @@ class NavigationNode(NevilNode):
     def on_auto_mode_command(self, message):
         """Handle direct auto mode commands from speech recognition"""
         try:
+            self.logger.info(f"🎯 [AUTO COMMAND DEBUG] Message received! Type: {type(message)}")
+            self.logger.info(f"🎯 [AUTO COMMAND DEBUG] Message data: {message.data}")
+
             command = message.data.get('command', '')
             trigger = message.data.get('trigger', '')
             original_text = message.data.get('original_text', '')
@@ -704,14 +744,18 @@ class NavigationNode(NevilNode):
             self.logger.info(f"🎯 [AUTO COMMAND] Received: {command} (trigger: '{trigger}', text: '{original_text}')")
 
             if command == 'start':
+                self.logger.info("🚀 [AUTO COMMAND] Calling start_auto_mode()")
                 self.start_auto_mode()
             elif command == 'stop':
+                self.logger.info("🛑 [AUTO COMMAND] Calling stop_auto_mode()")
                 self.stop_auto_mode()
             else:
                 self.logger.warning(f"Unknown auto mode command: {command}")
 
         except Exception as e:
             self.logger.error(f"Error handling auto mode command: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
 
     def on_mood_command(self, message):
         """Handle mood change commands"""
@@ -736,9 +780,82 @@ class NavigationNode(NevilNode):
         except Exception as e:
             self.logger.error(f"Error handling mood command: {e}")
 
+    def start_auto_mode(self):
+        """Start automatic mode"""
+        try:
+            if self.auto_enabled:
+                self.logger.info("[AUTO] Already in automatic mode")
+                return
+
+            self.logger.info("🚀 [AUTO] Starting automatic mode...")
+            self.auto_enabled = True
+            self.mock_nevil.auto_enabled = True
+
+            # Start autonomous thread
+            self.auto_thread = threading.Thread(target=self.run_auto, daemon=True)
+            self.auto_thread.start()
+
+            # Publish status update
+            self.publish("auto_mode_status", {
+                "active": True,
+                "mood": self.automatic.current_mood_name,
+                "behavior": "starting",
+                "timestamp": time.time()
+            })
+
+            # Announce activation
+            self.publish("tts_request", {
+                "text": f"Automatic mode activated! I'm feeling {self.automatic.current_mood_name}.",
+                "priority": 10
+            })
+
+            self.logger.info("✅ [AUTO] Automatic mode started successfully")
+
+        except Exception as e:
+            self.logger.error(f"[AUTO] Error starting automatic mode: {e}")
+            import traceback
+            self.logger.error(f"[AUTO] Traceback: {traceback.format_exc()}")
+
+    def stop_auto_mode(self):
+        """Stop automatic mode"""
+        try:
+            if not self.auto_enabled:
+                self.logger.info("[AUTO] Automatic mode not running")
+                return
+
+            self.logger.info("🛑 [AUTO] Stopping automatic mode...")
+            self.auto_enabled = False
+            self.mock_nevil.auto_enabled = False
+
+            # Wait for thread to finish
+            if self.auto_thread and self.auto_thread.is_alive():
+                self.auto_thread.join(timeout=3.0)
+
+            # Publish status update
+            self.publish("auto_mode_status", {
+                "active": False,
+                "mood": self.automatic.current_mood_name,
+                "behavior": "stopped",
+                "timestamp": time.time()
+            })
+
+            # Announce deactivation
+            self.publish("tts_request", {
+                "text": "Automatic mode deactivated.",
+                "priority": 10
+            })
+
+            self.logger.info("✅ [AUTO] Automatic mode stopped successfully")
+
+        except Exception as e:
+            self.logger.error(f"[AUTO] Error stopping automatic mode: {e}")
+
     def cleanup(self):
         """Cleanup navigation resources"""
         self.logger.info("Cleaning up Navigation Node...")
+
+        # Signal shutdown to all threads
+        self.shutdown_event.set()
 
         # Stop auto mode if running
         if self.auto_enabled:

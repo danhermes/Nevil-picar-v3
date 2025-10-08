@@ -11,6 +11,7 @@ import threading
 import queue
 from nevil_framework.base_node import NevilNode
 from nevil_framework.busy_state import busy_state
+from nevil_framework.chat_logger import get_chat_logger
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -31,6 +32,9 @@ class SpeechRecognitionNode(NevilNode):
 
     def __init__(self):
         super().__init__("speech_recognition")
+
+        # Initialize chat logger for performance tracking
+        self.chat_logger = get_chat_logger()
 
         # Load OpenAI API key for speech recognition
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -200,19 +204,44 @@ class SpeechRecognitionNode(NevilNode):
 
     def _process_audio_discrete(self, audio):
         """Discrete audio processing - v2.0 approach: Save → STT → AI → TTS"""
-        try:
-            self.logger.info("🎙️  Starting discrete audio processing cycle")
+        # Generate unique conversation ID for this exchange
+        conversation_id = self.chat_logger.generate_conversation_id()
 
-            # STEP 1: Save audio file
+        try:
+            self.logger.info(f"🎙️  Starting conversation: {conversation_id}")
+
+            # STEP 1: Log REQUEST (audio capture completed)
+            with self.chat_logger.log_step(
+                conversation_id, "request",
+                metadata={"source": "microphone", "device": "default"}
+            ):
+                # Audio already captured, just log the event
+                pass
+
+            # STEP 2: Speech-to-Text with logging
             recognition_start = time.time()
             language = self.recognition_config.get('language', 'en-US')
 
-            # STEP 2: Speech-to-Text (creates and saves audio file)
-            text = self.speech_to_text(audio, language)
+            with self.chat_logger.log_step(
+                conversation_id, "stt",
+                input_text="<audio_data>",
+                metadata={
+                    "model": "whisper-1",
+                    "language": language,
+                    "audio_format": "wav"
+                }
+            ) as stt_log:
+                text = self.speech_to_text(audio, language)
+                stt_log["output_text"] = text if text else "<no_speech_detected>"
 
             if text and text.strip():
+                # DEBUG: Log all recognized speech
+                self.logger.info(f"🎤 [SPEECH DEBUG] Recognized: '{text.strip()}'")
+
                 # Check for auto mode triggers BEFORE AI processing
                 text_lower = text.strip().lower()
+                self.logger.info(f"🔍 [TRIGGER DEBUG] Checking triggers in: '{text_lower}'")
+
                 auto_triggers = ['start auto', 'go play', 'seeya nevil', 'see ya nevil',
                                'auto mode', 'automatic mode', 'go have fun', 'go explore',
                                'entertain yourself', 'do your thing']
@@ -221,15 +250,17 @@ class SpeechRecognitionNode(NevilNode):
 
                 # Check for auto mode triggers
                 for trigger in auto_triggers:
+                    self.logger.info(f"🔍 [TRIGGER DEBUG] Checking: '{trigger}' in '{text_lower}' = {trigger in text_lower}")
                     if trigger in text_lower:
                         self.logger.info(f"🤖 [AUTO TRIGGER] Detected: '{trigger}' in '{text}'")
                         # Publish direct auto command to navigation
-                        self.publish("auto_mode_command", {
+                        publish_result = self.publish("auto_mode_command", {
                             "command": "start",
                             "trigger": trigger,
                             "original_text": text.strip(),
                             "timestamp": time.time()
                         })
+                        self.logger.info(f"📢 [PUBLISH DEBUG] auto_mode_command publish result: {publish_result}")
                         return  # Don't process through AI, just trigger auto mode
 
                 for trigger in stop_triggers:
@@ -253,7 +284,8 @@ class SpeechRecognitionNode(NevilNode):
                     "confidence": confidence,
                     "timestamp": time.time(),
                     "language": language,
-                    "duration": recognition_time
+                    "duration": recognition_time,
+                    "conversation_id": conversation_id  # Pass to next step
                 }
 
                 # STEP 4: Send to AI for processing (which triggers TTS)

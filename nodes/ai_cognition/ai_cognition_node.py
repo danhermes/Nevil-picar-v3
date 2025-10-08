@@ -10,6 +10,7 @@ import time
 import random
 import json
 from nevil_framework.base_node import NevilNode
+from nevil_framework.chat_logger import get_chat_logger
 
 
 class AiCognitionNode(NevilNode):
@@ -25,6 +26,9 @@ class AiCognitionNode(NevilNode):
 
     def __init__(self):
         super().__init__("ai_cognition")
+
+        # Initialize chat logger for performance tracking
+        self.chat_logger = get_chat_logger()
 
         # Load OpenAI API key and assistant ID
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -318,8 +322,14 @@ class AiCognitionNode(NevilNode):
             text = message.data.get("text", "")
             confidence = message.data.get("confidence", 0.0)
             timestamp = message.data.get("timestamp", time.time())
+            conversation_id = message.data.get("conversation_id")
 
-            self.logger.info(f"Processing voice command: '{text}' (confidence: {confidence:.2f})")
+            # Fallback if conversation_id not provided
+            if not conversation_id:
+                conversation_id = self.chat_logger.generate_conversation_id()
+                self.logger.warning(f"No conversation_id provided, generated: {conversation_id}")
+
+            self.logger.info(f"Processing voice command: '{text}' (conv: {conversation_id})")
 
             # Check confidence threshold
             if confidence < self.confidence_threshold:
@@ -333,8 +343,19 @@ class AiCognitionNode(NevilNode):
             if self.processing_delay > 0:
                 time.sleep(self.processing_delay)
 
-            # Generate response based on mode
-            response_text = self._generate_response(text)
+            # STEP 3: Log GPT processing with real timing
+            with self.chat_logger.log_step(
+                conversation_id, "gpt",
+                input_text=text,
+                metadata={
+                    "model": self.model,
+                    "mode": self.mode,
+                    "assistant_id": self.openai_assistant_id if self.mode == 'openai' else None,
+                    "confidence": confidence
+                }
+            ) as gpt_log:
+                response_text = self._generate_response(text)
+                gpt_log["output_text"] = response_text if response_text else "<no_response>"
 
             if response_text:
                 # Prepare text response message
@@ -343,7 +364,8 @@ class AiCognitionNode(NevilNode):
                     "voice": "onyx",  # Default voice
                     "priority": 100,
                     "context_id": f"stub_{int(timestamp)}",
-                    "timestamp": time.time()
+                    "timestamp": time.time(),
+                    "conversation_id": conversation_id  # Pass to next step
                 }
 
                 # Publish text response (will be picked up by speech synthesis)

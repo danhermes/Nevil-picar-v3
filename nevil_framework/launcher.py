@@ -17,6 +17,56 @@ import logging
 from datetime import datetime
 import subprocess
 import tempfile
+from dotenv import load_dotenv
+
+# Load environment variables FIRST before any audio imports
+load_dotenv()
+
+# BRUTAL ALSA SUPPRESSION - Set ALL known ALSA environment variables
+os.environ['ALSA_VERBOSITY'] = '0'
+os.environ['ALSA_LOG_LEVEL'] = '0'
+os.environ['LIBASOUND_DEBUG'] = '0'
+os.environ['ALSA_PCM_CARD'] = 'default'
+os.environ['ALSA_MIXER_SIMPLE'] = '1'
+
+# Filter stderr to block ALSA messages
+class ALSAFilter:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, data):
+        # NUCLEAR ALSA SUPPRESSION - Block EVERYTHING containing ALSA
+        data_str = str(data)
+        if ('ALSA' in data_str or 'alsa' in data_str or
+            'snd_' in data_str or 'pcm_' in data_str or
+            'confmisc' in data_str or '_snd_' in data_str or
+            'pcm.c:' in data_str or 'conf.c:' in data_str or
+            'dmix' in data_str or '/dev/snd/' in data_str or
+            'card index' in data_str or 'Cannot get card' in data_str or
+            'Device or resource busy' in data_str or
+            'No such device' in data_str or 'No such file' in data_str or
+            'Unknown PCM' in data_str or 'cards.pcm' in data_str or
+            'Unable to find definition' in data_str or
+            'function snd_func_' in data_str or
+            'Evaluate error' in data_str or
+            'parse_card' in data_str or
+            'surround' in data_str or 'iec958' in data_str or
+            'spdif' in data_str or 'hdmi' in data_str or
+            'modem' in data_str or 'phoneline' in data_str or
+            'oss.c:' in data_str or 'a52.c:' in data_str):
+            return  # Block ALL ALSA garbage
+        self.stream.write(data)
+
+    def flush(self):
+        self.stream.flush()
+
+    def fileno(self):
+        return self.stream.fileno()
+
+# Replace stderr with filtered version ALWAYS (not just when env var is set)
+sys.stderr = ALSAFilter(sys.stderr)
+import warnings
+warnings.filterwarnings("ignore")
 
 from .config_loader import ConfigLoader
 from .message_bus import MessageBus

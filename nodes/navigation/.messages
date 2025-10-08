@@ -30,6 +30,69 @@ publishes:
         required: true
         description: "Unix timestamp"
 
+  - topic: "tts_request"
+    message_type: "TTSRequest"
+    description: "Text-to-speech requests from automatic mode"
+    frequency: "on_demand"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Text to be synthesized"
+      voice:
+        type: "string"
+        required: false
+        description: "Voice to use for synthesis"
+        default: "onyx"
+      priority:
+        type: "integer"
+        required: false
+        description: "Request priority"
+        default: 100
+
+  - topic: "auto_mode_status"
+    message_type: "AutoModeStatus"
+    description: "Automatic mode status updates"
+    frequency: "on_change"
+    schema:
+      active:
+        type: "boolean"
+        required: true
+        description: "Whether auto mode is currently active"
+      mood:
+        type: "string"
+        required: false
+        description: "Current autonomous mood"
+      behavior:
+        type: "string"
+        required: false
+        description: "Current autonomous behavior"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "sound_effect"
+    message_type: "SoundEffect"
+    description: "Sound effect playback requests"
+    frequency: "on_demand"
+    schema:
+      effect:
+        type: "string"
+        required: true
+        description: "Sound effect to play"
+        allowed: ["honk", "rev_engine", "horn", "airhorn", "machinegun", "shock", "dubstep", "dubstep_bass", "reggae", "agent_theme", "ghost_laugh", "ghost_voice", "wolf_howl", "creepy_bell", "horror_hit", "inception_horn", "alien_voice", "alien_pitch", "alien_horn", "preacher"]
+      volume:
+        type: "integer"
+        required: false
+        description: "Playback volume (0-100)"
+        default: 100
+      priority:
+        type: "integer"
+        required: false
+        description: "Request priority"
+        default: 50
+
 # Topics this node subscribes to
 subscribes:
   - topic: "robot_action"

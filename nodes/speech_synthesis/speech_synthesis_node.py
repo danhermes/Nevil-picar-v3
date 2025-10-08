@@ -10,11 +10,20 @@ import os
 import queue
 import threading
 import warnings
+from dotenv import load_dotenv
 from nevil_framework.base_node import NevilNode
+from nevil_framework.chat_logger import get_chat_logger
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Suppress ALSA warnings if environment variable is set
 if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
     warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
+
+# Set ALSA verbosity to 0 if specified
+if os.getenv('ALSA_VERBOSITY') == '0':
+    os.environ['ALSA_VERBOSITY'] = '0'
 from nevil_framework.busy_state import busy_state
 from audio.audio_output import AudioOutput
 
@@ -33,6 +42,9 @@ class SpeechSynthesisNode(NevilNode):
 
     def __init__(self):
         super().__init__("speech_synthesis")
+
+        # Initialize chat logger for performance tracking
+        self.chat_logger = get_chat_logger()
 
         # Load OpenAI API key for TTS
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -126,9 +138,16 @@ class SpeechSynthesisNode(NevilNode):
     def _process_tts_request(self, tts_request):
         """Process TTS request using v1.0 EXACT pipeline"""
         text = tts_request.get("text", "")
+        conversation_id = tts_request.get("conversation_id")
+
         if not text.strip():
             self.logger.warning("Empty text for TTS, skipping")
             return
+
+        # Fallback if conversation_id not provided
+        if not conversation_id:
+            conversation_id = self.chat_logger.generate_conversation_id()
+            self.logger.warning(f"No conversation_id in TTS request, generated: {conversation_id}")
 
         # Acquire busy state for speaking
         self.logger.debug("Acquiring busy state for TTS...")
@@ -140,7 +159,7 @@ class SpeechSynthesisNode(NevilNode):
             voice = tts_request.get("voice", self.tts_config.get("default_voice", "onyx"))
             volume_db = self.audio_config.get("volume_db", -10)
 
-            self.logger.info(f"Processing TTS: '{text}' (voice: {voice})")
+            self.logger.info(f"Processing TTS: '{text}' (conv: {conversation_id})")
 
             with self.speaking_lock:
                 self.is_speaking = True
@@ -149,20 +168,38 @@ class SpeechSynthesisNode(NevilNode):
             # Publish speaking status
             self._publish_speaking_status(True, text, voice)
 
-            synthesis_start = time.time()
+            # STEP 4: Log TTS synthesis with real timing
+            with self.chat_logger.log_step(
+                conversation_id, "tts",
+                input_text=text[:200],  # Limit input text length
+                metadata={
+                    "voice": voice,
+                    "model": "tts-1",
+                    "volume_db": volume_db
+                }
+            ) as tts_log:
+                success = self.audio_output.generate_and_play_tts(
+                    message=text,
+                    openai_helper=self,  # Pass self directly as openai_helper
+                    volume_db=volume_db,
+                    voice=voice
+                )
+                tts_log["output_text"] = "<audio_file>" if success else "<tts_failed>"
 
-            # Use v1.0 EXACT TTS pipeline via AudioOutput
-            success = self.audio_output.generate_and_play_tts(
-                message=text,
-                openai_helper=self,  # Pass self directly as openai_helper
-                volume_db=volume_db,
-                voice=voice
-            )
-
-            synthesis_time = time.time() - synthesis_start
+            # STEP 5: Log RESPONSE (playback completion)
+            with self.chat_logger.log_step(
+                conversation_id, "response",
+                input_text="<audio_file>",
+                metadata={
+                    "success": success,
+                    "device": "speaker"
+                }
+            ) as resp_log:
+                # Audio playback is already complete from generate_and_play_tts
+                resp_log["output_text"] = "playback_complete" if success else "playback_failed"
 
             if success:
-                self.logger.info(f"✓ TTS completed: '{text}' in {synthesis_time:.3f}s")
+                self.logger.info(f"✓ Conversation complete: {conversation_id}")
                 self.synthesis_count += 1
                 self.last_synthesis_time = time.time()
             else:
@@ -247,13 +284,14 @@ class SpeechSynthesisNode(NevilNode):
                 self.logger.warning("Received empty text response, ignoring")
                 return
 
-            # Create TTS request
+            # Create TTS request with conversation_id
             tts_request = {
                 "text": text.strip(),
                 "voice": voice,
                 "speed": speed,
                 "source": message.source_node,
-                "timestamp": message.timestamp
+                "timestamp": message.timestamp,
+                "conversation_id": message.data.get("conversation_id")  # Pass through
             }
 
             # Add to priority queue (lower priority number = higher priority)
@@ -281,6 +319,91 @@ class SpeechSynthesisNode(NevilNode):
 
         except Exception as e:
             self.logger.error(f"Error handling system mode change: {e}")
+
+    def on_tts_request(self, message):
+        """Handle direct TTS requests from automatic mode (declaratively configured callback)"""
+        try:
+            text = message.data.get("text", "")
+            voice = message.data.get("voice", self.tts_config.get("default_voice", "onyx"))
+            priority = message.data.get("priority", 100)
+
+            if not text.strip():
+                self.logger.warning("Received empty text for TTS request, ignoring")
+                return
+
+            # Create TTS request with conversation_id
+            tts_request = {
+                "text": text.strip(),
+                "voice": voice,
+                "speed": 1.0,
+                "source": message.source_node,
+                "timestamp": message.timestamp,
+                "conversation_id": message.data.get("conversation_id")  # Pass through
+            }
+
+            # Add to priority queue (lower priority number = higher priority)
+            try:
+                self.tts_queue.put_nowait((priority, message.timestamp, tts_request))
+                self.logger.debug(f"Queued TTS request from auto mode: '{text}' (priority: {priority})")
+
+            except queue.Full:
+                self.logger.warning(f"TTS queue full, dropping auto mode request: '{text}'")
+
+        except Exception as e:
+            self.logger.error(f"Error handling TTS request: {e}")
+
+    def on_sound_effect(self, message):
+        """Handle sound effect playback requests (declaratively configured callback)"""
+        try:
+            effect = message.data.get("effect", "")
+            volume = message.data.get("volume", 100)
+            priority = message.data.get("priority", 50)
+
+            if not effect:
+                self.logger.warning("Received empty sound effect request")
+                return
+
+            self.logger.info(f"🔊 Playing sound effect: {effect} (volume: {volume})")
+
+            # Import sound mappings from action_helper
+            from nodes.navigation.action_helper import SOUND_MAPPINGS
+
+            # Map effect names to full sound file paths
+            sound_files = {
+                name: f"/home/dan/Nevil-picar-v3/audio/sounds/{filename}"
+                for name, filename in SOUND_MAPPINGS.items()
+            }
+
+            sound_file = sound_files.get(effect)
+            if not sound_file:
+                self.logger.error(f"Unknown sound effect: {effect}")
+                return
+
+            # Check if file exists
+            if not os.path.exists(sound_file):
+                self.logger.error(f"Sound file not found: {sound_file}")
+                return
+
+            # Play the sound using the audio output's Music() instance
+            if self.audio_output and self.audio_output.music:
+                # Acquire busy state for sound playback
+                if not busy_state.acquire("sound_effect"):
+                    self.logger.warning("Could not acquire busy state for sound effect")
+                    return
+
+                try:
+                    self.audio_output.music.sound_play(sound_file, volume)
+                    # Wait for sound to finish
+                    while self.audio_output.music.pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+                    self.logger.info(f"✓ Sound effect completed: {effect}")
+                finally:
+                    busy_state.release()
+            else:
+                self.logger.error("Audio output not available for sound effects")
+
+        except Exception as e:
+            self.logger.error(f"Error playing sound effect: {e}")
 
     def cleanup(self):
         """Cleanup speech synthesis resources"""

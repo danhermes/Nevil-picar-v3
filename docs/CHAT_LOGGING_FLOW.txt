@@ -1,0 +1,246 @@
+═══════════════════════════════════════════════════════════════════════════════
+                      CHAT LOGGING SYSTEM - FLOW DIAGRAM
+═══════════════════════════════════════════════════════════════════════════════
+
+CONVERSATION PIPELINE WITH LOGGING
+───────────────────────────────────────────────────────────────────────────────
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. SPEECH RECOGNITION NODE                                                  │
+│    nodes/speech_recognition/speech_recognition_node.py                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                               │
+                               │ Generate conversation_id
+                               │ conversation_id = logger.generate_conversation_id()
+                               │ → "20251008_143022_a1b2c3d4"
+                               ↓
+        ┌──────────────────────────────────────────────────┐
+        │  STEP 1: REQUEST                                 │
+        │  ─────────────────────                           │
+        │  • Audio capture starts                          │
+        │  • Duration: ~150ms                              │
+        │  • Metadata: {"source": "microphone"}            │
+        │                                                  │
+        │  with logger.log_step(conv_id, "request"):      │
+        │      audio = capture_audio()                     │
+        └──────────────────────────────────────────────────┘
+                               │
+                               ↓
+        ┌──────────────────────────────────────────────────┐
+        │  STEP 2: STT (Speech-to-Text)                    │
+        │  ───────────────────────────────                 │
+        │  • OpenAI Whisper API                            │
+        │  • Duration: ~1200ms                             │
+        │  • Input: "<audio_data>"                         │
+        │  • Output: "What's the weather?"                 │
+        │  • Metadata: {"model": "whisper-1",              │
+        │              "language": "en-US"}                │
+        │                                                  │
+        │  with logger.log_step(conv_id, "stt") as log:   │
+        │      text = speech_to_text(audio)                │
+        │      log["output_text"] = text                   │
+        └──────────────────────────────────────────────────┘
+                               │
+                               │ publish("voice_command", {
+                               │   "text": text,
+                               │   "conversation_id": conv_id  ← PASS TO NEXT
+                               │ })
+                               ↓
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 2. AI COGNITION NODE                                                        │
+│    nodes/ai_cognition/ai_cognition_node.py                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                               │
+                               │ Extract conversation_id from message
+                               ↓
+        ┌──────────────────────────────────────────────────┐
+        │  STEP 3: GPT (AI Response)                       │
+        │  ────────────────────────                        │
+        │  • OpenAI Assistants API                         │
+        │  • Duration: ~3400ms (SLOWEST STEP)              │
+        │  • Input: "What's the weather?"                  │
+        │  • Output: "It's sunny today!"                   │
+        │  • Metadata: {"model": "gpt-4",                  │
+        │              "assistant_id": "asst_123",         │
+        │              "confidence": 0.95}                 │
+        │                                                  │
+        │  with logger.log_step(conv_id, "gpt") as log:   │
+        │      response = generate_response(text)          │
+        │      log["output_text"] = response               │
+        └──────────────────────────────────────────────────┘
+                               │
+                               │ publish("text_response", {
+                               │   "text": response,
+                               │   "conversation_id": conv_id  ← PASS TO NEXT
+                               │ })
+                               ↓
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 3. SPEECH SYNTHESIS NODE                                                    │
+│    nodes/speech_synthesis/speech_synthesis_node.py                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                               │
+                               │ Extract conversation_id from message
+                               ↓
+        ┌──────────────────────────────────────────────────┐
+        │  STEP 4: TTS (Text-to-Speech)                    │
+        │  ───────────────────────────────                 │
+        │  • OpenAI TTS API                                │
+        │  • Duration: ~1400ms                             │
+        │  • Input: "It's sunny today!"                    │
+        │  • Output: "<audio_file>"                        │
+        │  • Metadata: {"voice": "onyx",                   │
+        │              "model": "tts-1"}                   │
+        │                                                  │
+        │  with logger.log_step(conv_id, "tts") as log:   │
+        │      audio_file = synthesize_speech(text)        │
+        │      log["output_text"] = audio_file             │
+        └──────────────────────────────────────────────────┘
+                               │
+                               ↓
+        ┌──────────────────────────────────────────────────┐
+        │  STEP 5: RESPONSE (Playback)                     │
+        │  ──────────────────────────────                  │
+        │  • Audio playback via speakers                   │
+        │  • Duration: ~450ms                              │
+        │  • Input: "<audio_file>"                         │
+        │  • Output: "playback_complete"                   │
+        │  • Metadata: {"device": "speaker"}               │
+        │                                                  │
+        │  with logger.log_step(conv_id, "response"):     │
+        │      play_audio(audio_file)                      │
+        └──────────────────────────────────────────────────┘
+                               │
+                               ↓
+                    CONVERSATION COMPLETE
+                    Total Duration: ~6.6 seconds
+
+═══════════════════════════════════════════════════════════════════════════════
+
+DATABASE STORAGE (logs/chat_log.db)
+───────────────────────────────────────────────────────────────────────────────
+
+After conversation, database contains 5 rows:
+
+┌────┬───────────────────────┬─────────┬─────────────────────────┬──────────┐
+│ id │ conversation_id       │  step   │ timestamp_start         │duration_ms│
+├────┼───────────────────────┼─────────┼─────────────────────────┼──────────┤
+│  1 │ 20251008_143022_a1b2  │ request │ 2025-10-08T14:30:22.123 │   150.0  │
+│  2 │ 20251008_143022_a1b2  │ stt     │ 2025-10-08T14:30:22.273 │  1234.0  │
+│  3 │ 20251008_143022_a1b2  │ gpt     │ 2025-10-08T14:30:23.507 │  3567.0  │
+│  4 │ 20251008_143022_a1b2  │ tts     │ 2025-10-08T14:30:27.074 │  1456.0  │
+│  5 │ 20251008_143022_a1b2  │ response│ 2025-10-08T14:30:28.530 │   457.0  │
+└────┴───────────────────────┴─────────┴─────────────────────────┴──────────┘
+
+Plus additional columns: status, input_text, output_text, metadata, error_text
+
+═══════════════════════════════════════════════════════════════════════════════
+
+QUERY & ANALYSIS
+───────────────────────────────────────────────────────────────────────────────
+
+CLI Commands:
+─────────────
+
+  # Show recent conversations
+  $ python3 -m nevil_framework.chat_analytics recent
+
+  # Get timing summary
+  $ python3 -m nevil_framework.chat_analytics summary 20251008_143022_a1b2
+
+  Output:
+  ┌──────────────────────────────────────────────────────┐
+  │ Conversation: 20251008_143022_a1b2                   │
+  │ Total Duration: 6.864s (6864ms)                      │
+  │                                                      │
+  │ Step Breakdown:                                      │
+  │   ✓ request  :  0.150s ( 150.0ms)                   │
+  │   ✓ stt      :  1.234s (1234.0ms)                   │
+  │   ✓ gpt      :  3.567s (3567.0ms) ← BOTTLENECK      │
+  │   ✓ tts      :  1.456s (1456.0ms)                   │
+  │   ✓ response :  0.457s ( 457.0ms)                   │
+  └──────────────────────────────────────────────────────┘
+
+  # Performance statistics
+  $ python3 -m nevil_framework.chat_analytics averages --hours 24
+
+  Step               Count   Avg (ms)   Min (ms)   Max (ms)
+  ──────────────────────────────────────────────────────────
+  request               45      147.2      102.3      234.5
+  stt                   45     1234.5      890.2     2345.6
+  gpt                   45     3421.8     2100.5     5678.9  ← SLOWEST
+  tts                   45     1345.6      987.3     1890.4
+  response              45      456.7      234.1      678.9
+
+  # Find slow conversations
+  $ python3 -m nevil_framework.chat_analytics slow --threshold 8000
+
+  # Error analysis
+  $ python3 -m nevil_framework.chat_analytics errors
+
+
+Programmatic API:
+─────────────────
+
+  from nevil_framework.chat_logger import get_chat_logger
+
+  logger = get_chat_logger()
+
+  # Get summary with timing breakdown
+  summary = logger.get_conversation_summary(conversation_id)
+
+  # Performance stats
+  averages = logger.get_average_step_durations(hours=24)
+  slow = logger.get_slow_conversations(threshold_ms=5000)
+  errors = logger.get_error_rate(hours=24)
+
+  # Pretty print
+  logger.print_conversation_summary(conversation_id)
+
+
+Custom Queries:
+───────────────
+
+  import sqlite3
+  conn = sqlite3.connect('logs/chat_log.db')
+
+  # Conversations per hour
+  cursor = conn.execute("""
+      SELECT strftime('%H', timestamp_start) as hour,
+             COUNT(DISTINCT conversation_id) as count
+      FROM log_chat WHERE step = 'request'
+      GROUP BY hour ORDER BY count DESC
+  """)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+KEY INSIGHTS
+───────────────────────────────────────────────────────────────────────────────
+
+Performance Bottleneck:
+  GPT step (AI response) takes ~3-4 seconds (50-60% of total time)
+  → Consider caching common responses
+  → Use streaming for faster perceived response
+  → Optimize prompts for shorter responses
+
+Typical Conversation Timeline:
+  REQUEST:   150ms   (2%)   Audio capture
+  STT:      1200ms  (18%)   Speech recognition
+  GPT:      3400ms  (52%)   AI processing  ← FOCUS HERE
+  TTS:      1400ms  (21%)   Speech synthesis
+  RESPONSE:  450ms   (7%)   Audio playback
+  ─────────────────────────
+  TOTAL:    6600ms (100%)   ~6.6 seconds end-to-end
+
+Error Rates:
+  Most failures occur in GPT step (API limits, timeouts)
+  STT rarely fails (robust Whisper API)
+  TTS/Response very reliable (local or cached)
+
+Usage Patterns:
+  Peak hours: Analyze busiest times of day
+  Conversation frequency: Track daily/weekly trends
+  Success rate: Monitor overall system health
+
+═══════════════════════════════════════════════════════════════════════════════

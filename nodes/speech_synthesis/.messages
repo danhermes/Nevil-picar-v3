@@ -103,6 +103,55 @@ subscribes:
         required: true
         allowed: ["listening", "speaking", "thinking", "idle", "error"]
 
+  - topic: "tts_request"
+    message_type: "TTSRequest"
+    callback: "on_tts_request"
+    description: "Direct TTS requests from automatic mode"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Text to synthesize"
+        max_length: 1000
+      voice:
+        type: "string"
+        required: false
+        description: "Voice to use"
+        default: "onyx"
+        allowed: ["onyx", "alloy", "echo", "fable", "nova", "shimmer"]
+      priority:
+        type: "integer"
+        required: false
+        description: "Request priority"
+        default: 100
+        min: 1
+        max: 1000
+
+  - topic: "sound_effect"
+    message_type: "SoundEffect"
+    callback: "on_sound_effect"
+    description: "Sound effect playback requests"
+    schema:
+      effect:
+        type: "string"
+        required: true
+        description: "Sound effect to play"
+        allowed: ["honk", "rev_engine", "horn", "airhorn", "machinegun", "shock", "dubstep", "dubstep_bass", "reggae", "agent_theme", "ghost_laugh", "ghost_voice", "wolf_howl", "creepy_bell", "horror_hit", "inception_horn", "alien_voice", "alien_pitch", "alien_horn", "preacher"]
+      volume:
+        type: "integer"
+        required: false
+        description: "Playback volume (0-100)"
+        default: 100
+        min: 0
+        max: 100
+      priority:
+        type: "integer"
+        required: false
+        description: "Request priority"
+        default: 50
+        min: 1
+        max: 1000
+
 # Node configuration
 configuration:
   # Audio output settings - v1.0 EXACT Music() usage

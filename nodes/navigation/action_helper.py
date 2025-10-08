@@ -443,30 +443,109 @@ def celebrate(car):
     sleep(.25)
 
 def honk(car):
-    print(f"Honk called with car object: {car}, has music: {hasattr(car, 'music')}")
+    logger.info(f"🔊 HONK action called")
     try:
-        if hasattr(car, 'music'):
-            print(f"Car music object: {car.music}")
-            car.music.sound_play("../../../audio/sounds/car-double-horn.wav", 100)
-            while car.music.pygame.mixer.music.get_busy():
-                time.sleep(0.1)
+        # Check if we can publish sound effect message through navigation node
+        if hasattr(car, 'nav_node') and car.nav_node:
+            logger.info("Publishing honk sound effect request to speech synthesis")
+            car.nav_node.publish("sound_effect", {
+                "effect": "honk",
+                "volume": 100,
+                "priority": 30
+            })
+            # Brief pause for sound to play
+            time.sleep(1.0)
         else:
-            gray_print("Warning: Car does not have audio capabilities")
+            logger.warning("Cannot play honk - no navigation node reference for messaging")
     except Exception as e:
-        gray_print(f"Error playing honk sound: {e}")
+        logger.error(f"Error playing honk sound: {e}")
 
 def rev_engine(car):
-    print(f"Start engine called with car object: {car}, has music: {hasattr(car, 'music')}")
+    logger.info(f"🔊 REV ENGINE action called")
     try:
-        if hasattr(car, 'music'):
-            print(f"Car music object: {car.music}")
-            car.music.sound_play("../sounds/9qph2uvdcee-car-revving-sfx-7.mp3", 50)
-            while car.music.pygame.mixer.music.get_busy():
-                time.sleep(0.1)
+        # Check if we can publish sound effect message through navigation node
+        if hasattr(car, 'nav_node') and car.nav_node:
+            logger.info("Publishing rev_engine sound effect request to speech synthesis")
+            car.nav_node.publish("sound_effect", {
+                "effect": "rev_engine",
+                "volume": 80,
+                "priority": 30
+            })
+            # Brief pause for sound to play
+            time.sleep(1.5)
         else:
-            gray_print("Warning: Car does not have audio capabilities")
+            logger.warning("Cannot play rev engine - no navigation node reference for messaging")
     except Exception as e:
-        gray_print(f"Error playing engine sound: {e}")
+        logger.error(f"Error playing engine sound: {e}")
+
+# Sound mapping - maps action names to sound files
+SOUND_MAPPINGS = {
+    # Vehicle sounds
+    "honk": "car-double-horn.wav",
+    "rev_engine": "engine-revving.wav",
+    "horn": "train-horn-337875.mp3",
+    "airhorn": "airhorn-fx-343682.mp3",
+
+    # Weapon/action sounds
+    "machinegun": "clean-machine-gun-burst-98224.mp3",
+    "shock": "shock-gasp-female-383751.mp3",
+
+    # Musical/fun sounds
+    "dubstep": "dubstep-75bpm-67136.mp3",
+    "dubstep_bass": "dubstep-bassline-datsik-style-61181.mp3",
+    "reggae": "reggae-loop-75237.mp3",
+    "agent_theme": "agent-movie-music-inspired-by-james-bond-theme-30066.mp3",
+
+    # Spooky/Halloween sounds
+    "ghost_laugh": "scary-female-halloween-horror-laughter-vol-006-165223.mp3",
+    "ghost_voice": "ghost-voice-halloween-moany-ghost-168411.mp3",
+    "wolf_howl": "sound-effect-halloween-wolf-howling-253243.mp3",
+    "creepy_bell": "creepy-halloween-bell-trap-melody-247720.mp3",
+    "horror_hit": "horror-hit-logo-142395.mp3",
+    "inception_horn": "inception-style-movie-horn-80358.mp3",
+
+    # Alien sounds
+    "alien_voice": "alien-voice-102709.mp3",
+    "alien_pitch": "alien-high-pitch-312010.mp3",
+    "alien_horn": "eerie-alien-horn-82052.mp3",
+
+    # Preacher clips
+    "preacher": "old-school-preacher-clips-pastor-darryl-hussey-129622.mp3"
+}
+
+def play_sound(car, sound_name=None, volume=100):
+    """Generic sound player - takes sound name as parameter"""
+    if not sound_name:
+        logger.warning("No sound name provided to play_sound")
+        return
+
+    logger.info(f"🔊 PLAY_SOUND action called: {sound_name} (volume: {volume})")
+
+    try:
+        # Check if we can publish sound effect message through navigation node
+        if hasattr(car, 'nav_node') and car.nav_node:
+            logger.info(f"Publishing sound effect request: {sound_name}")
+            car.nav_node.publish("sound_effect", {
+                "effect": sound_name,
+                "volume": volume,
+                "priority": 30
+            })
+            # Brief pause for sound to play
+            time.sleep(1.0)
+        else:
+            logger.warning(f"Cannot play {sound_name} - no navigation node reference for messaging")
+    except Exception as e:
+        logger.error(f"Error playing sound {sound_name}: {e}")
+
+def honk(car):
+    """Honk the horn - wrapper for play_sound"""
+    logger.info("🚗 HONK action called")
+    play_sound(car, "honk", 100)
+
+def rev_engine(car):
+    """Rev the engine - wrapper for play_sound"""
+    logger.info("🏎️ REV_ENGINE action called")
+    play_sound(car, "rev_engine", 100)
 
 # Define dictionaries after all functions are defined
 actions_dict = {
@@ -497,6 +576,7 @@ actions_dict = {
     # Sounds
     "honk": honk,
     "start_engine": rev_engine,
+    "play_sound": play_sound,  # Generic sound player
 
     # LEGACY SPACE versions for backward compatibility
     "shake head": shake_head,

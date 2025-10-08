@@ -1,6 +1,6 @@
 
 from robot_hat import Servo
-from robot_hat.utils import reset_mcu
+from robot_hat import reset_mcu
 from time import sleep
 
 reset_mcu()

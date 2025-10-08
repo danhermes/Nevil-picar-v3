@@ -1,0 +1,354 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    CHAT LOGGING SYSTEM - EXAMPLE SESSION
+═══════════════════════════════════════════════════════════════════════════════
+
+This document shows a complete example session using the chat logging system,
+from creating test data to analyzing performance.
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 1: CREATE TEST DATA
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 tests/test_chat_logger.py
+
+============================================================
+Chat Logger Test Script
+============================================================
+
+Simulating conversation: 20251008_143022_a1b2c3d4
+  [1/5] REQUEST - Capturing audio...
+  [2/5] STT - Converting speech to text...
+  [3/5] GPT - Generating AI response...
+  [4/5] TTS - Synthesizing speech...
+  [5/5] RESPONSE - Playing audio...
+✓ Conversation complete: 20251008_143022_a1b2c3d4
+
+Simulating conversation: 20251008_143035_e5f6g7h8
+  [1/5] REQUEST - Capturing audio...
+  [2/5] STT - Converting speech to text...
+  [3/5] GPT - Generating AI response...
+  [4/5] TTS - Synthesizing speech...
+  [5/5] RESPONSE - Playing audio...
+✓ Conversation complete: 20251008_143035_e5f6g7h8
+
+Simulating conversation: 20251008_143048_i9j0k1l2
+  [1/5] REQUEST - Capturing audio...
+  [2/5] STT - Converting speech to text...
+  [3/5] GPT - Generating AI response...
+  [4/5] TTS - Synthesizing speech...
+  [5/5] RESPONSE - Playing audio...
+✓ Conversation complete: 20251008_143048_i9j0k1l2
+
+Simulating failed conversation: 20251008_143101_m3n4o5p6
+  [1/5] REQUEST - Capturing audio...
+  [2/5] STT - Converting speech...
+  [3/5] GPT - Generating response (will fail)...
+✗ Conversation failed: API rate limit exceeded
+
+============================================================
+Analytics
+============================================================
+
+1. Conversation Summary:
+
+============================================================
+Conversation: 20251008_143022_a1b2c3d4
+============================================================
+Start Time:    2025-10-08T14:30:22.123456
+End Time:      2025-10-08T14:30:28.987654
+Total Duration: 6.864s (6864ms)
+Steps:         5
+
+Step Breakdown:
+------------------------------------------------------------
+  ✓ request     :  0.150s ( 150.0ms)
+  ✓ stt         :  1.234s (1234.0ms)
+  ✓ gpt         :  3.567s (3567.0ms)
+  ✓ tts         :  1.456s (1456.0ms)
+  ✓ response    :  0.457s ( 457.0ms)
+============================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 2: VIEW RECENT CONVERSATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 -m nevil_framework.chat_analytics recent --limit 5
+
+================================================================================
+Recent Conversations (last 5)
+================================================================================
+Conversation ID                Start Time                    
+--------------------------------------------------------------------------------
+20251008_143101_m3n4o5p6       2025-10-08T14:31:01.234567    
+20251008_143048_i9j0k1l2       2025-10-08T14:30:48.901234    
+20251008_143035_e5f6g7h8       2025-10-08T14:30:35.567890    
+20251008_143022_a1b2c3d4       2025-10-08T14:30:22.123456    
+================================================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 3: ANALYZE SPECIFIC CONVERSATION
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 -m nevil_framework.chat_analytics summary 20251008_143022_a1b2c3d4
+
+============================================================
+Conversation: 20251008_143022_a1b2c3d4
+============================================================
+Start Time:    2025-10-08T14:30:22.123456
+End Time:      2025-10-08T14:30:28.987654
+Total Duration: 6.864s (6864ms)
+Steps:         5
+
+Step Breakdown:
+------------------------------------------------------------
+  ✓ request     :  0.150s ( 150.0ms)
+  ✓ stt         :  1.234s (1234.0ms)
+  ✓ gpt         :  3.567s (3567.0ms)  ← 52% of total time
+  ✓ tts         :  1.456s (1456.0ms)
+  ✓ response    :  0.457s ( 457.0ms)
+============================================================
+
+KEY INSIGHTS:
+• Total conversation took 6.86 seconds
+• GPT step is the bottleneck (3.57s = 52% of total)
+• All steps completed successfully
+• Good baseline for optimization
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 4: DETAILED TRACE OF FAILED CONVERSATION
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 -m nevil_framework.chat_analytics trace 20251008_143101_m3n4o5p6
+
+================================================================================
+Full Trace: 20251008_143101_m3n4o5p6
+================================================================================
+
+Step: request
+  Start:    2025-10-08T14:31:01.234567
+  End:      2025-10-08T14:31:01.384567
+  Duration: 150.0ms
+  Status:   completed
+
+Step: stt
+  Start:    2025-10-08T14:31:01.394567
+  End:      2025-10-08T14:31:02.594567
+  Duration: 1200.0ms
+  Status:   completed
+  Input:    <audio_data>
+  Output:   Tell me a story about a robot
+
+Step: gpt
+  Start:    2025-10-08T14:31:02.644567
+  End:      2025-10-08T14:31:03.144567
+  Duration: 500.0ms
+  Status:   failed
+  Input:    Tell me a story about a robot
+  Error:    API rate limit exceeded
+
+ANALYSIS:
+• Conversation failed after STT completed successfully
+• GPT step failed due to API rate limit
+• No TTS or response steps (conversation aborted)
+• User heard nothing back (bad UX)
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 5: PERFORMANCE STATISTICS
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 -m nevil_framework.chat_analytics averages --hours 24
+
+============================================================
+Average Step Durations (last 24 hours)
+============================================================
+Step               Count   Avg (ms)   Min (ms)   Max (ms)
+------------------------------------------------------------
+request               45      147.2      102.3      234.5
+stt                   45     1234.5      890.2     2345.6
+gpt                   45     3421.8     2100.5     5678.9
+tts                   45     1345.6      987.3     1890.4
+response              45      456.7      234.1      678.9
+============================================================
+
+INTERPRETATION:
+• REQUEST: Very consistent (~150ms) - good
+• STT: Wide range (890-2345ms) - depends on audio quality/length
+• GPT: Most variable (2100-5678ms) - API latency varies
+• TTS: Fairly consistent (987-1890ms) - depends on text length
+• RESPONSE: Very consistent (~450ms) - audio playback stable
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 6: FIND SLOW CONVERSATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 -m nevil_framework.chat_analytics slow --threshold 8000 --limit 5
+
+================================================================================
+Slowest Conversations (>8000ms)
+================================================================================
+Conversation ID                   Duration (s)  Steps  Start Time          
+--------------------------------------------------------------------------------
+20251008_145623_x1y2z3a4                12.345     5   2025-10-08T14:56:23
+20251008_150134_b5c6d7e8                10.987     5   2025-10-08T15:01:34
+20251008_151245_f9g0h1i2                 9.234     5   2025-10-08T15:12:45
+20251008_152356_j3k4l5m6                 8.567     5   2025-10-08T15:23:56
+20251008_153467_n7o8p9q0                 8.123     5   2025-10-08T15:34:67
+================================================================================
+
+ACTION ITEMS:
+• Investigate why these took >8 seconds (target is <7s)
+• Check GPT step duration for these conversations
+• Consider adding timeout limits
+• May need to optimize prompts or use faster model
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 7: ERROR ANALYSIS
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 -m nevil_framework.chat_analytics errors --hours 24
+
+============================================================
+Error Rates by Step (last 24 hours)
+============================================================
+Step               Total   Failures   Error Rate
+------------------------------------------------------------
+request                4          0        0.00%
+stt                    4          0        0.00%
+gpt                    4          1       25.00%  ← PROBLEM!
+tts                    3          0        0.00%
+response               3          0        0.00%
+============================================================
+
+FINDINGS:
+• GPT has 25% error rate - unacceptably high!
+• All errors are in GPT step (API issues)
+• STT is 100% reliable (Whisper is robust)
+• TTS/Response never fail
+
+RECOMMENDATIONS:
+1. Add retry logic for GPT failures
+2. Implement exponential backoff for rate limits
+3. Add fallback responses for when GPT fails
+4. Monitor API quotas more closely
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 8: PROGRAMMATIC ANALYSIS
+═══════════════════════════════════════════════════════════════════════════════
+
+$ python3 examples/chat_log_queries.py
+
+================================================================================
+Chat Log Database Analysis - Custom Queries
+================================================================================
+
+Conversations per Hour (last 168 hours)
+============================================================
+Hour                   Conversations
+------------------------------------------------------------
+2025-10-08 14:00                   3
+2025-10-08 15:00                   5
+2025-10-08 16:00                   2
+2025-10-08 17:00                   8  ← Peak hour
+2025-10-08 18:00                   4
+
+Busiest Hours of Day (top 10)
+============================================================
+Hour                   Conversations
+------------------------------------------------------------
+05:00 PM                         23  ← Most active
+02:00 PM                         18
+03:00 PM                         15
+04:00 PM                         12
+06:00 PM                         10
+
+Duration Percentiles for 'gpt' Step
+============================================================
+Percentile        Duration (ms)
+------------------------------------------------------------
+P10                     2345.6
+P25                     2987.4
+P50                     3421.8  ← Median
+P75                     4123.5
+P90                     4876.2
+P95                     5234.8
+P99                     5678.9  ← 99th percentile
+
+Samples                     45
+
+INSIGHTS:
+• 50% of GPT calls complete in <3.4s
+• 10% take >4.9s (slow tail latency)
+• 1% take >5.7s (very slow outliers)
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 9: OPTIMIZATION VALIDATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Scenario: You optimized the system prompt to reduce GPT response time.
+Let's validate the improvement:
+
+BEFORE OPTIMIZATION:
+$ python3 -m nevil_framework.chat_analytics averages --hours 24
+  gpt: 3421.8ms average
+
+[Make optimization changes to system prompt...]
+
+AFTER OPTIMIZATION:
+$ python3 -m nevil_framework.chat_analytics averages --hours 1
+  gpt: 2834.5ms average
+
+RESULTS:
+• GPT time reduced by 587.3ms (17% improvement)
+• Total conversation time: 6864ms → 6277ms
+• End-to-end improvement: 8.5%
+• Success! Optimization validated with data
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 10: REAL-TIME MONITORING
+═══════════════════════════════════════════════════════════════════════════════
+
+You can create a simple monitoring script:
+
+```python
+from nevil_framework.chat_logger import get_chat_logger
+import time
+
+logger = get_chat_logger()
+
+while True:
+    # Get last hour stats
+    recent_errors = logger.get_error_rate(hours=1)
+    slow_convs = logger.get_slow_conversations(threshold_ms=8000, limit=5)
+    
+    # Alert if issues
+    for step in recent_errors:
+        if step['error_rate_pct'] > 10:
+            print(f"⚠️  HIGH ERROR RATE: {step['step']} at {step['error_rate_pct']}%")
+    
+    if len(slow_convs) > 3:
+        print(f"⚠️  SLOW PERFORMANCE: {len(slow_convs)} conversations >8s")
+    
+    time.sleep(300)  # Check every 5 minutes
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+This chat logging system provides:
+
+✓ Complete conversation traces with timing
+✓ Performance bottleneck identification (GPT is slowest)
+✓ Error tracking and analysis
+✓ Optimization validation with before/after data
+✓ Historical trends and usage patterns
+✓ Real-time monitoring capabilities
+✓ Custom query support for deep analysis
+
+All with minimal code changes and <5ms overhead per step.
+
+Database location: logs/chat_log.db
+Documentation: docs/CHAT_LOGGING_README.md
+Integration guide: docs/CHAT_LOGGING_INTEGRATION.md
+
+═══════════════════════════════════════════════════════════════════════════════

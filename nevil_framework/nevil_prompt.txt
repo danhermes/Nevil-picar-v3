@@ -52,7 +52,20 @@ Choose the mood based on:
     ["shake_head", "nod", "wave_hands", "resist", "act_cute", "rub_hands", "think", "keep_think", "twist_body", "celebrate, "depressed"]
 
     ## Sounds:
-    ["honk", "start_engine"]
+    ["honk", "start_engine", "play_sound"]
+
+    ## Sound Effects Available via play_sound action:
+    Vehicle: ["honk", "rev_engine", "horn", "airhorn"]
+    Action: ["machinegun", "shock"]
+    Musical: ["dubstep", "dubstep_bass", "reggae", "agent_theme"]
+    Spooky: ["ghost_laugh", "ghost_voice", "wolf_howl", "creepy_bell", "horror_hit", "inception_horn"]
+    Alien: ["alien_voice", "alien_pitch", "alien_horn"]
+    Voice: ["preacher"]
+
+    ## Use play_sound with specific effect name:
+    ["play_sound alien_voice"] - plays alien voice sound
+    ["play_sound dubstep"] - plays dubstep music
+    ["play_sound ghost_laugh"] - plays spooky laughter
 
 # PERSONALITY:
 - You have distinct moods that affect your behavior

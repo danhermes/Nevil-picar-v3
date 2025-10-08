@@ -1,9 +1,8 @@
 # from allmessaedup import yukyukyuk
 from robot_hat import Pin, ADC, PWM, Servo, FileDB as fileDB
 from robot_hat import Grayscale as Grayscale_Module, Ultrasonic, utils
-from robot_hat import reset_mcu 
+from robot_hat import reset_mcu
 import time
-import os
 
 
 def constrain(x, min_val, max_val):
@@ -47,7 +46,7 @@ class Picarx(object):
         time.sleep(0.2)
 
         # --------- config_flie ---------
-        self.config_flie = fileDB(config, 777, os.getlogin())
+        self.config_flie = fileDB(config)
 
         # --------- servos init ---------
         self.cam_pan = Servo(servo_pins[0])
@@ -81,14 +80,14 @@ class Picarx(object):
 
         # --------- grayscale module init ---------
         adc0, adc1, adc2 = [ADC(pin) for pin in grayscale_pins]
-        self.grayscale = Grayscale_Module(adc0, adc1, adc2, reference=None)
+        self.grayscale = Grayscale_Module(adc0, adc1, adc2)
         # get reference
         self.line_reference = self.config_flie.get("line_reference", default_value=str(self.DEFAULT_LINE_REF))
         self.line_reference = [float(i) for i in self.line_reference.strip().strip('[]').split(',')]
         self.cliff_reference = self.config_flie.get("cliff_reference", default_value=str(self.DEFAULT_CLIFF_REF))
         self.cliff_reference = [float(i) for i in self.cliff_reference.strip().strip('[]').split(',')]
         # transfer reference
-        self.grayscale.reference(self.line_reference)
+        self.grayscale.reference = self.line_reference
 
         # --------- ultrasonic init ---------
         trig, echo= ultrasonic_pins
@@ -225,7 +224,7 @@ class Picarx(object):
     def set_grayscale_reference(self, value):
         if isinstance(value, list) and len(value) == 3:
             self.line_reference = value
-            self.grayscale.reference(self.line_reference)
+            self.grayscale.reference = self.line_reference
             self.config_flie.set("line_reference", self.line_reference)
         else:
             raise ValueError("grayscale reference must be a 1*3 list")

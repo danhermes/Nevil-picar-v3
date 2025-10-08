@@ -9,7 +9,7 @@ The `automatic.py` module (`/home/dan/Nevil-picar-v3/nodes/navigation/automatic.
 # Say to Nevil:
 "Go play"           # Starts auto mode with current mood
 "Seeya Nevil"       # Dismissive way to start auto mode
-"Stop playing"      # Stops auto mode
+"Stop playing"      # Stops auto mode, ex. come back
 "Set mood playful"  # Changes to playful personality
 ```
 

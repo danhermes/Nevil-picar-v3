@@ -1,8 +1,19 @@
 import random
 import time
 import warnings
+import os
+from dotenv import load_dotenv
 
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
+# Load environment variables from .env file
+load_dotenv()
+
+# Suppress ALSA warnings if environment variable is set
+if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
+
+# Set ALSA verbosity to 0 if specified
+if os.getenv('ALSA_VERBOSITY') == '0':
+    os.environ['ALSA_VERBOSITY'] = '0'
 
 # Actions: forward, backward, left, right, stop, twist left, twist right, come here, shake head, 
 #    nod, wave hands, resist, act cute, rub hands, think, twist body, celebrate, depressed, keep think
@@ -86,49 +97,6 @@ class Automatic:
             "dance": self.dance
         }
 
-    def do_actions(self, actions, mood=None):
-        """Queue actions for execution by action thread"""
-        if isinstance(actions, list):
-            action_str = ", ".join(actions)
-        else:
-            action_str = str(actions)
-        print(f"\n[AUTOMATIC MODE] 🎯 Actions: {action_str}" + (f" (Mood: {mood})" if mood else ""))
-        
-        # Parse to check if it's a sound
-        #action, params = self.nevil.parse_action(actions)
-        
-        # # Queue sound effects directly to speech handler
-        # if action in ["honk", "start_engine"]:
-        #     with self.nevil.speech_lock:
-        #         self.nevil.sound_effects_queue.append(action)
-        #         self.nevil.speech_loaded = True  # Set flag so speech thread processes it
-        #         self.nevil.tts_file = None  # No TTS file for sound effects
-        
-        # Queue action for action thread
-        with self.nevil.action_lock:
-            self.nevil.actions_to_be_done = [actions]
-            self.nevil.action_status = 'actions'
-        
-        # Wait for both speech and action to complete
-        while True:
-            if not self.nevil.auto_enabled:
-                break
-            
-            speech_done = True
-            action_done = False
-            
-            with self.nevil.speech_lock:
-                if self.nevil.speech_loaded:
-                    speech_done = False
-                
-            with self.nevil.action_lock:
-                if self.nevil.action_status != 'actions':
-                    action_done = True
-                
-            if speech_done and action_done:
-                break
-            
-            time.sleep(.01)
 
     def explore(self, mood):
         actions = []
@@ -620,22 +588,13 @@ class Automatic:
         """Queue multiple actions for execution"""
         if not actions:
             return
-        
+
         # Log the actions
         action_str = ", ".join(actions)
         print(f"[AUTOMATIC MODE] 📋 Queueing actions: {action_str}" + (f" ({mood})" if mood else ""))
-        
-        # Queue the actions
+
+        # Queue the actions for the navigation node to pick up
         with self.nevil.action_lock:
             self.nevil.actions_to_be_done = actions
-            self.nevil.action_status = 'actions'
-        
-        # Wait for completion
-        while True:
-            if not self.nevil.auto_enabled:
-                break
-            with self.nevil.action_lock:
-                if self.nevil.action_status != 'actions':
-                    break
-            time.sleep(.01)
+            # Don't set action_status or wait - let navigation node handle execution
 
