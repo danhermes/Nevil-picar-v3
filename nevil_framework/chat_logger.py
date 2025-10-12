@@ -247,6 +247,7 @@ class ChatLogger:
                     FROM log_chat
                     WHERE status = 'completed'
                       AND timestamp_start > ?
+                      AND duration_ms < 60000
                     GROUP BY step
                 """, (cutoff_iso,))
 
