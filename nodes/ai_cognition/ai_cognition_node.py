@@ -9,8 +9,17 @@ import os
 import time
 import random
 import json
+import sys
+from pathlib import Path
+
+# Add the ai_cognition directory to sys.path for completion imports
+_ai_cognition_dir = Path(__file__).parent
+if str(_ai_cognition_dir) not in sys.path:
+    sys.path.insert(0, str(_ai_cognition_dir))
+
 from nevil_framework.base_node import NevilNode
 from nevil_framework.chat_logger import get_chat_logger
+from completion.factory import get_completion_provider
 
 
 class AiCognitionNode(NevilNode):
@@ -30,24 +39,17 @@ class AiCognitionNode(NevilNode):
         # Initialize chat logger for performance tracking
         self.chat_logger = get_chat_logger()
 
-        # Load OpenAI API key and assistant ID
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        self.openai_assistant_id = os.getenv('OPENAI_ASSISTANT_ID')
-        self.openai_client = None
-        
-        # Thread management for Assistants API
-        self.current_thread = None
-        self.thread_created = False
-
-        # This will be logged later once logger is available
+        # Get AI provider type from environment (default: ollama)
+        self.ai_provider_type = os.getenv('NEVIL_AI', 'openai_completion')
+        self.completion_provider = None
 
         # Configuration from .messages file
         config = self.config.get('configuration', {})
         self.ai_config = config.get('ai', {})
         self.processing_config = config.get('processing', {})
 
-        # AI behavior settings - mode will be determined in initialize()
-        self.mode = 'echo'  # Default to echo mode
+        # AI behavior settings
+        self.mode = 'echo'  # Will be set in initialize()
         self.model = self.ai_config.get('model', 'gpt-3.5-turbo')
         self.max_tokens = self.ai_config.get('max_tokens', 150)
         self.temperature = self.ai_config.get('temperature', 0.7)
@@ -57,20 +59,23 @@ class AiCognitionNode(NevilNode):
         # Conversation context
         self.conversation_history = []
         self.max_history_length = self.ai_config.get('max_history_length', 10)
-        self.system_prompt = self.ai_config.get('system_prompt',
-            "You are Nevil, a helpful and friendly robot assistant. "
-            "You should respond conversationally and helpfully to user questions. "
-            "Keep responses concise and natural for speech synthesis.")
+
+        # System prompt - MUST be configured in .messages file (nodes/ai_cognition/.messages)
+        # No fallback - if missing, we want to fail loudly so it's fixed in config
+        self.system_prompt = self.ai_config.get('system_prompt')
+        if not self.system_prompt:
+            raise ValueError("system_prompt must be configured in nodes/ai_cognition/.messages")
+
 
         # Processing state
         self.processing_count = 0
         self.last_response_time = 0
-        self.openai_error_count = 0
+        self.ai_error_count = 0
 
         # Visual data storage
         self.latest_image = None
 
-        # Fallback responses for stub mode
+        # Fallback responses for echo mode
         self.echo_responses = [
             "I heard you say: {text}",
             "You said: {text}",
@@ -78,52 +83,36 @@ class AiCognitionNode(NevilNode):
         ]
 
     def initialize(self):
-        """Initialize AI cognition with OpenAI integration"""
+        """Initialize AI cognition with completion provider factory"""
         self.logger.info("Initializing AI Cognition Node...")
-
-        # Debug logging for API key and assistant ID (without exposing sensitive data)
-        if self.openai_api_key:
-            self.logger.info("OpenAI API key found in environment")
-            if self.openai_assistant_id:
-                self.logger.info(f"OpenAI Assistant ID found: {self.openai_assistant_id} (will be used with Assistants API)")
-            else:
-                self.logger.warning("No OpenAI Assistant ID found - Assistants API requires assistant_id")
-        else:
-            self.logger.warning("No OpenAI API key found in environment variables")
+        self.logger.info(f"AI Provider: {self.ai_provider_type} (from NEVIL_AI env var)")
 
         try:
-            # Determine mode based on available credentials
-            if self.openai_api_key and self.openai_assistant_id:
-                self.mode = self.ai_config.get('mode', 'openai')
-            else:
-                self.mode = 'echo'
-                if not self.openai_api_key:
-                    self.logger.warning("No OpenAI API key - using echo mode")
-                if not self.openai_assistant_id:
-                    self.logger.warning("No OpenAI Assistant ID - using echo mode")
-            
-            # Initialize OpenAI client if API key available
-            if self.openai_api_key and self.mode == 'openai':
-                import openai
-                self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
-                self.logger.info("OpenAI client initialized successfully")
+            # Initialize completion provider from factory
+            try:
+                self.completion_provider = get_completion_provider(self.ai_provider_type)
+                self.mode = 'ai'  # Using AI provider
+                self.logger.info(f"✓ Successfully initialized {self.ai_provider_type} provider")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize AI provider '{self.ai_provider_type}': {e}")
+                self.mode = 'echo'  # Fallback to echo mode
+                self.logger.warning("Falling back to echo mode")
 
             # Log configuration
             self.logger.info("AI Cognition Configuration:")
             self.logger.info(f"  Mode: {self.mode}")
-            if self.mode == 'openai':
-                self.logger.info(f"  Model: {self.model}")
+            self.logger.info(f"  Provider: {self.ai_provider_type}")
+            if self.mode == 'ai':
                 self.logger.info(f"  Max tokens: {self.max_tokens}")
                 self.logger.info(f"  Temperature: {self.temperature}")
             self.logger.info(f"  Confidence threshold: {self.confidence_threshold}")
             self.logger.info(f"  Processing delay: {self.processing_delay}s")
 
             # Initialize conversation with system prompt
-            if self.mode == 'openai':
-                self.conversation_history = [
-                    {"role": "system", "content": self.system_prompt}
-                ]
-                self.logger.info(f"Conversation initialized with system prompt")
+            self.conversation_history = [
+                {"role": "system", "content": self.system_prompt}
+            ]
+            self.logger.info(f"Conversation initialized with system prompt")
 
             # Start in idle mode
             self._set_system_mode("idle", "ai_ready")
@@ -178,8 +167,8 @@ class AiCognitionNode(NevilNode):
             self._set_system_mode("thinking", "processing_image")
 
             # Generate AI response about the image
-            if self.mode == "openai" and self.openai_client:
-                response_text = self._generate_openai_image_response(image_data)
+            if self.mode == "ai" and self.completion_provider:
+                response_text = self._generate_ai_image_response(image_data)
             else:
                 response_text = "I can see an image, but I'm in echo mode and cannot analyze it."
 
@@ -211,104 +200,20 @@ class AiCognitionNode(NevilNode):
             self.logger.error(f"Error processing image with AI: {e}")
             self._set_system_mode("error", f"image_processing_error: {e}")
 
-    def _generate_openai_image_response(self, image_data):
-        """Generate response using OpenAI Assistants API with vision (v1.0 approach)"""
+    def _generate_ai_image_response(self, image_data):
+        """Generate response with image analysis using AI provider"""
         try:
-            # Create thread if it doesn't exist
-            if not self.thread_created:
-                self.current_thread = self.openai_client.beta.threads.create()
-                self.thread_created = True
-                self.logger.info(f"🔄 Created new thread for assistant {self.openai_assistant_id}: {self.current_thread.id}")
-
-            # Use v1.0 file upload approach with purpose="vision"
-            import base64
-            import tempfile
-            import os
-
-            try:
-                # Decode base64 to binary data
-                image_binary = base64.b64decode(image_data)
-                self.logger.info(f"📊 Image decoded: {len(image_binary)} bytes")
-
-                # Save image permanently and create temp file for upload
-                timestamp = int(time.time())
-                image_filename = f"images/nevil_image_{timestamp}.jpg"
-
-                # Save permanent copy
-                with open(image_filename, "wb") as perm_file:
-                    perm_file.write(image_binary)
-                self.logger.info(f"💾 Saved image to: {image_filename}")
-
-                # Upload file with purpose="vision" (v1.0 approach)
-                self.logger.info(f"⬆️ Uploading image file to OpenAI with purpose=vision...")
-                img_file = self.openai_client.files.create(
-                    file=open(image_filename, "rb"),
-                    purpose="vision"
+            # Check if provider supports image analysis
+            if hasattr(self.completion_provider, 'get_completion_with_image'):
+                return self.completion_provider.get_completion_with_image(
+                    "I can see an image. Please describe what you observe.",
+                    image_data
                 )
-
-                self.logger.info(f"✅ Image uploaded, file_id: {img_file.id}")
-                # Note: Keeping permanent file, not deleting it
-
-                # Add message using image_file (v1.0 approach)
-                self.openai_client.beta.threads.messages.create(
-                    thread_id=self.current_thread.id,
-                    role="user",
-                    content=[
-                        {
-                            "type": "text",
-                            "text": "I can see an image. Please describe what you observe."
-                        },
-                        {
-                            "type": "image_file",
-                            "image_file": {"file_id": img_file.id}
-                        }
-                    ]
-                )
-
-                # Use create_and_poll for simpler run management (v1.0 approach)
-                run = self.openai_client.beta.threads.runs.create_and_poll(
-                    thread_id=self.current_thread.id,
-                    assistant_id=self.openai_assistant_id
-                )
-
-                if run.status == 'completed':
-                    # Get the assistant's response
-                    messages = self.openai_client.beta.threads.messages.list(
-                        thread_id=self.current_thread.id
-                    )
-
-                    # Get the latest assistant message
-                    for message in messages.data:
-                        if message.role == 'assistant':
-                            response_text = message.content[0].text.value
-                            self.logger.info(f"✅ Image analysis successful: {response_text}")
-
-                            # Parse JSON response to extract answer, actions, and mood (same as voice)
-                            parsed_response = self._parse_json_response(response_text)
-
-                            # Publish actions and mood from image response
-                            self._publish_actions_and_mood(
-                                parsed_response,
-                                "Image analysis",  # original_text
-                                {"text": "Image analysis"}  # original_command
-                            )
-
-                            # Return only the answer part for speech synthesis
-                            return parsed_response.get('answer', response_text)
-
-                    self.logger.warning("No assistant response found in completed run")
-                    return "I see an image but couldn't analyze it properly."
-
-                else:
-                    self.logger.error(f"Assistant run failed with status: {run.status}")
-                    return "I had trouble analyzing that image."
-
-            except Exception as e:
-                self.logger.error(f"Error processing image file: {e}")
-                return "I had trouble processing the image file."
-
+            else:
+                self.logger.warning(f"Provider {self.ai_provider_type} does not support image analysis")
+                return "I see an image, but I cannot analyze images with this AI provider."
         except Exception as e:
-            self.logger.error(f"Error calling OpenAI for image analysis: {e}")
+            self.logger.error(f"Error processing image with AI provider: {e}")
             return "I see an image but encountered an error during analysis."
 
     def on_voice_command(self, message):
@@ -350,7 +255,7 @@ class AiCognitionNode(NevilNode):
                 metadata={
                     "model": self.model,
                     "mode": self.mode,
-                    "assistant_id": self.openai_assistant_id if self.mode == 'openai' else None,
+                    "provider": self.ai_provider_type,
                     "confidence": confidence
                 }
             ) as gpt_log:
@@ -392,15 +297,15 @@ class AiCognitionNode(NevilNode):
             self._set_system_mode("error", f"processing_error: {e}")
 
     def _generate_response(self, input_text):
-        """Generate response using OpenAI or fallback modes"""
+        """Generate response using completion provider or fallback"""
         try:
             if not input_text.strip():
                 return "I didn't catch that."
 
             text = input_text.strip()
 
-            if self.mode == "openai" and self.openai_client:
-                return self._generate_openai_response(text)
+            if self.mode == "ai" and self.completion_provider:
+                return self._generate_ai_response(text)
             elif self.mode == "echo":
                 return f"I heard you say: {text}"
             else:
@@ -409,84 +314,60 @@ class AiCognitionNode(NevilNode):
 
         except Exception as e:
             self.logger.error(f"Error generating response: {e}")
-            self.openai_error_count += 1
+            self.ai_error_count += 1
             return "I had trouble processing that."
 
-    def _generate_openai_response(self, user_input):
-        """Generate response using OpenAI Assistants API with thread management"""
+    def _generate_ai_response(self, user_input):
+        """Generate response using completion provider (factory-based)"""
         try:
-            # Create thread if it doesn't exist
-            if not self.thread_created:
-                self.current_thread = self.openai_client.beta.threads.create()
-                self.thread_created = True
-                self.logger.info(f"🔄 Created new thread for assistant {self.openai_assistant_id}: {self.current_thread.id}")
+            # Add user message to conversation history
+            self.conversation_history.append({
+                "role": "user",
+                "content": user_input
+            })
 
-            # Add the user message to the thread
-            self.openai_client.beta.threads.messages.create(
-                thread_id=self.current_thread.id,
-                role="user",
-                content=user_input
+            # Trim conversation history to max length
+            if len(self.conversation_history) > self.max_history_length:
+                # Keep system prompt + most recent messages
+                self.conversation_history = [
+                    self.conversation_history[0]  # System prompt
+                ] + self.conversation_history[-(self.max_history_length - 1):]
+
+            # Get completion from provider
+            response_text = self.completion_provider.get_completion(
+                messages=self.conversation_history,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
             )
 
-            self.logger.debug(f"Added user message to thread {self.current_thread.id}")
+            if response_text:
+                self.logger.debug(f"AI raw response: '{response_text[:100]}...'")
 
-            # Run the assistant on the thread
-            run = self.openai_client.beta.threads.runs.create(
-                thread_id=self.current_thread.id,
-                assistant_id=self.openai_assistant_id
-            )
+                # Add assistant response to conversation history
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": response_text
+                })
 
-            self.logger.debug(f"Started assistant run: {run.id}")
+                # Parse JSON response
+                parsed_response = self._parse_json_response(response_text)
 
-            # Wait for the run to complete
-            import time
-            while run.status in ['queued', 'in_progress']:
-                time.sleep(0.5)
-                run = self.openai_client.beta.threads.runs.retrieve(
-                    thread_id=self.current_thread.id,
-                    run_id=run.id
-                )
-                self.logger.debug(f"Run status: {run.status}")
-
-            if run.status == 'completed':
-                # Get the assistant's response
-                messages = self.openai_client.beta.threads.messages.list(
-                    thread_id=self.current_thread.id
+                # Publish actions and mood to navigation node
+                self._publish_actions_and_mood(
+                    parsed_response,
+                    user_input,
+                    {"text": user_input}
                 )
 
-                # Get the latest assistant message
-                for message in messages.data:
-                    if message.role == 'assistant':
-                        response_text = message.content[0].text.value
-                        self.logger.debug(f"OpenAI Assistant raw response: '{response_text}'")
-
-                        # Parse JSON response
-                        parsed_response = self._parse_json_response(response_text)
-
-                        # Publish actions and mood to navigation node
-                        self._publish_actions_and_mood(
-                            parsed_response,
-                            user_input,  # Use the correct parameter name
-                            {"text": user_input}  # Create a simple command dict
-                        )
-
-                        # Return only the answer field
-                        return parsed_response.get('answer', response_text)
-
-                self.logger.warning("No assistant response found in completed run")
-                return "I'm not sure how to respond to that."
-
-            elif run.status == 'failed':
-                self.logger.error(f"Assistant run failed: {run.last_error}")
-                return "I had trouble processing that request."
-
+                # Return only the answer field
+                return parsed_response.get('answer', response_text)
             else:
-                self.logger.warning(f"Unexpected run status: {run.status}")
+                self.logger.warning("No AI response received")
                 return "I'm not sure how to respond to that."
 
         except Exception as e:
-            self.logger.error(f"Error calling OpenAI Assistants API: {e}")
-            self.openai_error_count += 1
+            self.logger.error(f"Error calling AI provider: {e}")
+            self.ai_error_count += 1
 
             # Fallback to echo mode for this response
             return f"I heard: {user_input}"
@@ -633,40 +514,39 @@ class AiCognitionNode(NevilNode):
         if hasattr(self, 'conversation_history'):
             self.conversation_history.clear()
 
-        # Reset thread state
-        self.current_thread = None
-        self.thread_created = False
+        # Cleanup completion provider
+        if self.completion_provider and hasattr(self.completion_provider, 'refresh_session'):
+            self.completion_provider.refresh_session()
 
         self.logger.info(f"AI cognition stopped after {self.processing_count} responses")
-        if self.openai_error_count > 0:
-            self.logger.info(f"OpenAI errors encountered: {self.openai_error_count}")
+        if self.ai_error_count > 0:
+            self.logger.info(f"AI errors encountered: {self.ai_error_count}")
 
     def get_ai_stats(self):
         """Get AI cognition statistics"""
         return {
             "mode": self.mode,
-            "model": self.model if self.mode == 'openai' else None,
+            "provider": self.ai_provider_type,
             "processing_count": self.processing_count,
-            "openai_error_count": self.openai_error_count,
+            "ai_error_count": self.ai_error_count,
             "confidence_threshold": self.confidence_threshold,
             "last_response_time": self.last_response_time,
             "conversation_length": len(self.conversation_history) if hasattr(self, 'conversation_history') else 0,
-            "openai_available": self.openai_client is not None
+            "ai_available": self.completion_provider is not None
         }
 
     def reset_conversation(self):
         """Reset conversation history to start fresh"""
-        if self.mode == 'openai':
-            # Reset thread state for Assistants API
-            self.current_thread = None
-            self.thread_created = False
-            self.logger.info("Thread reset - new conversation will start with fresh thread")
-        else:
-            # For echo mode, just clear conversation history
-            self.conversation_history = [
-                {"role": "system", "content": self.system_prompt}
-            ]
-            self.logger.info("Conversation history reset")
+        # Reset conversation history
+        self.conversation_history = [
+            {"role": "system", "content": self.system_prompt}
+        ]
+
+        # Reset provider session if supported
+        if self.completion_provider and hasattr(self.completion_provider, 'refresh_session'):
+            self.completion_provider.refresh_session()
+
+        self.logger.info("Conversation history reset")
 
     def get_conversation_summary(self):
         """Get a summary of recent conversation"""

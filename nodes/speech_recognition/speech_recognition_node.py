@@ -117,6 +117,12 @@ class SpeechRecognitionNode(NevilNode):
                     time.sleep(0.5)
                     continue
 
+                # Check if system is speaking BEFORE starting to record
+                if self.speaking_active:
+                    self.logger.debug("Skipping recording - system is speaking")
+                    time.sleep(0.5)
+                    continue
+
                 # DISCRETE RECORDING CYCLE - Acquire busy state first
                 self.logger.debug("Waiting for busy state...")
 
@@ -128,6 +134,13 @@ class SpeechRecognitionNode(NevilNode):
                     continue
 
                 try:
+                    # Double-check speaking status after acquiring busy state
+                    if self.speaking_active:
+                        self.logger.debug("Skipping recording - system started speaking")
+                        busy_state.release()
+                        time.sleep(0.5)
+                        continue
+
                     self.logger.debug("Starting discrete recording cycle (not busy)...")
 
                     # 1. Mic ON - single recording session
@@ -556,6 +569,8 @@ class SpeechRecognitionNode(NevilNode):
 
             try:
                 # Use OpenAI Whisper API
+                whisper_start = time.time()
+                self.logger.info(f"[STT TIMING] Calling OpenAI Whisper API at {whisper_start:.3f}")
                 self.logger.debug("Creating OpenAI client and sending transcription request")
                 client = openai.OpenAI(api_key=self.openai_api_key)
 
@@ -566,6 +581,9 @@ class SpeechRecognitionNode(NevilNode):
                         language=language.split('-')[0] if language else None  # Convert en-US to en
                     )
 
+                whisper_end = time.time()
+                whisper_duration = whisper_end - whisper_start
+                self.logger.info(f"[STT TIMING] OpenAI Whisper API completed in {whisper_duration:.3f}s")
                 self.logger.debug(f"OpenAI transcription completed: '{transcript.text[:50]}...'")
                 return transcript.text if transcript.text.strip() else None
 

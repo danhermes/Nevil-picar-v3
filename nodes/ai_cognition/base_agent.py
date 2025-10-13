@@ -9,7 +9,16 @@ except ImportError:
 from helpers.LLMs import BaseLLM
 import re
 from typing import Dict, List, Optional
-from agents.completion.factory import get_completion_provider
+
+# Try relative import first (for Nevil nodes), fall back to agents path
+try:
+    from .completion.factory import get_completion_provider
+except ImportError:
+    try:
+        from agents.completion.factory import get_completion_provider
+    except ImportError:
+        # Final fallback - import from nodes path
+        from nodes.ai_cognition.completion.factory import get_completion_provider
 
 # Configure logging
 logger = logging.getLogger("streamlit")
@@ -40,8 +49,8 @@ class BaseAgent:
         Child agents can override this to add their specific env vars.
         """
         # Log which completion provider will be used
-        zoe_ai = os.getenv("ZOE_AI", "ollama")
-        self.logger.info(f"Using completion provider: {zoe_ai}")
+        nevil_ai = os.getenv("NEVIL_AI", "ollama")
+        self.logger.info(f"Using completion provider: {nevil_ai}")
     
     def transcribe_audio(self, audio_file: str) -> Optional[str]:
         """Transcribe audio file using configured STT service"""

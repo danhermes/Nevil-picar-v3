@@ -31,20 +31,38 @@ class BusyStateManager:
         self.busy_lock = threading.Lock()
         self.is_busy = False
         self.current_activity = None  # Track what Nevil is doing
+        self.interrupt_requested = False  # Flag for interrupt requests
+        self.interruptible = True  # Whether current activity can be interrupted
         self.logger = logging.getLogger("BusyState")
         self._initialized = True
 
-    def acquire(self, activity_name="unknown", timeout=120.0):
+    def acquire(self, activity_name="unknown", timeout=120.0, can_interrupt=False, interruptible=True):
         """
         Acquire the busy state for a specific activity
+
+        Args:
+            activity_name: Name of the activity requesting the lock
+            timeout: Maximum time to wait for the lock
+            can_interrupt: If True, this activity can interrupt lower-priority activities
+            interruptible: If True, this activity can be interrupted by higher-priority activities
+
         Default timeout: 2 minutes to prevent freezing
         """
+        # If this is an interruptible request (like TTS), try to interrupt current activity
+        if can_interrupt and self.is_busy and self.interruptible:
+            self.logger.warning(f"🚨 {activity_name} interrupting {self.current_activity}")
+            self.interrupt_requested = True
+            # Give the current activity a brief moment to check interrupt flag and release
+            time.sleep(0.1)
+
         acquired = self.busy_lock.acquire(timeout=timeout)
         if acquired:
             self.is_busy = True
             self.current_activity = activity_name
+            self.interruptible = interruptible
+            self.interrupt_requested = False
             self.activity_start_time = time.time()
-            self.logger.debug(f"Acquired busy state for: {activity_name}")
+            self.logger.debug(f"Acquired busy state for: {activity_name} (interruptible: {interruptible})")
             return True
         else:
             # Log how long the current activity has been running
@@ -59,6 +77,10 @@ class BusyStateManager:
                     self.force_release()
                     return self.acquire(activity_name, 5.0)  # Try again with short timeout
             return False
+
+    def should_interrupt(self):
+        """Check if current activity should be interrupted"""
+        return self.interrupt_requested
 
     def release(self):
         """Release the busy state"""

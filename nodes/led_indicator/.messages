@@ -1,0 +1,110 @@
+# LED Indicator Node Message Configuration
+# Controls LED blink patterns to indicate system state
+
+node_name: "led_indicator"
+version: "1.0"
+description: "Visual status indicator using LED blink patterns"
+
+# Topics this node publishes to
+publishes:
+  - topic: "led_status"
+    message_type: "LEDStatus"
+    description: "Current LED state"
+    frequency: "on_change"
+    schema:
+      state:
+        type: "string"
+        required: true
+        description: "Current LED pattern state"
+        allowed: ["play", "listen", "actions", "off"]
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "system_mode"
+    message_type: "SystemMode"
+    callback: "on_system_mode_change"
+    description: "System mode changes affect LED patterns"
+    schema:
+      mode:
+        type: "string"
+        required: true
+        description: "Current system mode"
+        allowed: ["listening", "speaking", "thinking", "idle", "error"]
+      timestamp:
+        type: "float"
+        required: false
+        description: "Unix timestamp"
+
+  - topic: "speaking_status"
+    message_type: "SpeakingStatus"
+    callback: "on_speaking_status"
+    description: "Speaking status affects LED (play mode)"
+    schema:
+      speaking:
+        type: "boolean"
+        required: true
+        description: "True if currently speaking"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "listening_status"
+    message_type: "ListeningStatus"
+    callback: "on_listening_status"
+    description: "Listening status from speech recognition"
+    schema:
+      listening:
+        type: "boolean"
+        required: true
+        description: "True if actively listening for speech"
+      reason:
+        type: "string"
+        required: false
+        description: "Reason for status change"
+
+  - topic: "auto_mode_status"
+    message_type: "AutoModeStatus"
+    callback: "on_auto_mode_status"
+    description: "Autonomous play mode status"
+    schema:
+      active:
+        type: "boolean"
+        required: true
+        description: "Whether auto mode is currently active"
+      mood:
+        type: "string"
+        required: false
+        description: "Current autonomous mood"
+      behavior:
+        type: "string"
+        required: false
+        description: "Current autonomous behavior"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+# Node configuration
+configuration:
+  # LED hardware settings
+  hardware:
+    led_pin: "LED"           # robot_hat Pin identifier
+
+  # Timing settings (from v1.0)
+  timing:
+    double_blink_interval: 1.2   # Time between double blink sequences (play mode)
+    blink_interval: 0.1          # Fast blink on/off time (listen mode)
+
+  # State mappings
+  mode_mappings:
+    # Map system modes to LED states
+    listening: "listen"      # Fast continuous blink
+    speaking: "play"         # Double blink pattern
+    thinking: "actions"      # Solid on
+    idle: "play"            # Double blink pattern
+    error: "actions"         # Solid on (for errors)

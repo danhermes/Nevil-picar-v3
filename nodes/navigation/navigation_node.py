@@ -273,9 +273,9 @@ class NavigationNode(NevilNode):
 
         self.logger.info(f"📝 SOURCE: '{source_text}'")
 
-        # Acquire busy state for entire action sequence
+        # Acquire busy state for entire action sequence - actions are interruptible
         self.logger.debug("Acquiring busy state for navigation...")
-        if not busy_state.acquire("acting"):
+        if not busy_state.acquire("acting", interruptible=True):
             self.logger.error("Could not acquire busy state for navigation, aborting action sequence")
             return
 
@@ -291,8 +291,14 @@ class NavigationNode(NevilNode):
             })
 
             for i, action_str in enumerate(actions, 1):
+                # Check for shutdown or interrupt
                 if self.shutdown_event.is_set():
                     self.logger.warning(f"❌ Action sequence stopped at {i}/{len(actions)}")
+                    break
+
+                # Check if TTS wants to interrupt
+                if busy_state.should_interrupt():
+                    self.logger.warning(f"🚨 Action sequence interrupted by TTS at {i}/{len(actions)}")
                     break
 
                 self.logger.info(f"🎬 [{i}/{len(actions)}] Executing: '{action_str}'")

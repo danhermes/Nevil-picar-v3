@@ -230,13 +230,15 @@ class ChatLogger:
 
     def get_average_step_durations(self, limit_hours=24):
         """Get average duration for each step type over recent time period"""
-        cutoff_time = datetime.now().timestamp() - (limit_hours * 3600)
-        cutoff_iso = datetime.fromtimestamp(cutoff_time).isoformat()
+        # Calculate cutoff time in seconds since epoch
+        cutoff_timestamp = datetime.now().timestamp() - (limit_hours * 3600)
+        cutoff_iso = datetime.fromtimestamp(cutoff_timestamp).isoformat()
 
         with self.lock:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             try:
+                # Use direct timestamp comparison or compare as strings with proper format
                 cursor = conn.execute("""
                     SELECT
                         step,
@@ -246,7 +248,7 @@ class ChatLogger:
                         MAX(duration_ms) as max_ms
                     FROM log_chat
                     WHERE status = 'completed'
-                      AND timestamp_start > ?
+                      AND timestamp_start >= ?
                       AND duration_ms < 60000
                     GROUP BY step
                 """, (cutoff_iso,))

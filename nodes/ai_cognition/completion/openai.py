@@ -8,7 +8,8 @@ import logging
 import os
 import time
 
-logger = logging.getLogger(__name__)
+# Use ai_cognition logger name so logs appear in ai_cognition.log
+logger = logging.getLogger("ai_cognition")
 
 
 class OpenAICompletion(CompletionBase):
@@ -105,6 +106,7 @@ class OpenAICompletion(CompletionBase):
         """
         Convert messages to OpenAI format.
 
+        OpenAI expects standard format, so minimal conver
         OpenAI expects standard format, so minimal conversion needed.
 
         Args:
@@ -144,12 +146,14 @@ class OpenAICompletion(CompletionBase):
         try:
             logger.info(f"-------- Calling OpenAI --------")
             logger.info(f"Model: {self.model}")
-            logger.info(f"Messages: {len(messages)} messages")
             logger.info(f"Temperature: {temperature}")
+            logger.info(f"Messages: {len(messages)} messages")
+            logger.info(f"Message: {messages} ")
 
             params = {
                 "model": self.model,
                 "messages": messages,
+                "response_format": {"type": "json_object"}  # Enforce JSON output
             }
 
             if temperature is not None:

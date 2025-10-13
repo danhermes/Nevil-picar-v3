@@ -60,6 +60,48 @@ def cmd_averages(logger, args):
 
     print(f"{'='*60}\n")
 
+    # Show TTS breakdown if available
+    import sqlite3
+    import json
+    conn = sqlite3.connect(logger.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute("""
+            SELECT metadata FROM log_chat
+            WHERE step = 'tts'
+            AND status = 'completed'
+            AND metadata IS NOT NULL
+            LIMIT 100
+        """)
+
+        rows = cursor.fetchall()
+        if rows:
+            queue_waits = []
+            busy_waits = []
+
+            for row in rows:
+                try:
+                    meta = json.loads(row['metadata'])
+                    if 'queue_wait_ms' in meta:
+                        queue_waits.append(meta['queue_wait_ms'])
+                    if 'busy_wait_ms' in meta:
+                        busy_waits.append(meta['busy_wait_ms'])
+                except:
+                    pass
+
+            if queue_waits or busy_waits:
+                print(f"TTS Timing Breakdown (last 100 TTS operations):")
+                print(f"{'-'*60}")
+                if queue_waits:
+                    avg_queue = sum(queue_waits) / len(queue_waits)
+                    print(f"  Queue wait:       {avg_queue:>10.1f}ms avg")
+                if busy_waits:
+                    avg_busy = sum(busy_waits) / len(busy_waits)
+                    print(f"  Busy_state wait:  {avg_busy:>10.1f}ms avg")
+                print(f"{'='*60}\n")
+    finally:
+        conn.close()
+
 
 def cmd_slow(logger, args):
     """Show slowest conversations"""

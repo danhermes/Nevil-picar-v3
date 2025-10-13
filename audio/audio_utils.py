@@ -70,9 +70,15 @@ def play_audio_file(music, tts_file):
     """
     try:
         if os.path.exists(tts_file):
+            playback_start = time.time()
+            print(f"[PLAYBACK TIMING] Starting playback at {playback_start:.3f}")
             music.music_play(tts_file)
+            first_sound = time.time()
+            print(f"[PLAYBACK TIMING] music_play() returned after {(first_sound - playback_start)*1000:.1f}ms")
             while music.pygame.mixer.music.get_busy():
                 time.sleep(0.1)
+            playback_end = time.time()
+            print(f"[PLAYBACK TIMING] Playback completed in {(playback_end - playback_start):.3f}s")
             music.music_stop()
 
             # Clean up old files, keeping only the last 10

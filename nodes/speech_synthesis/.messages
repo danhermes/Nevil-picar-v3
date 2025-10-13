@@ -162,6 +162,7 @@ configuration:
 
   # TTS settings - v1.0 pattern
   tts:
+    model: "tts-1"           # OpenAI TTS model (tts-1 or tts-1-hd) - can override with NEVIL_TTS env var
     default_voice: "onyx"    # v1.0 TTS_VOICE setting
     default_speed: 1.0
     api_timeout: 30.0

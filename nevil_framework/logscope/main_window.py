@@ -852,8 +852,13 @@ class NevilLogScope(QMainWindow):
         self.search_pattern = text
         if text:
             try:
-                flags = 0 if self.search_case_sensitive.isChecked() else re.IGNORECASE
-                if self.search_regex_mode.isChecked():
+                # Check if search checkboxes exist (full toolbar mode)
+                flags = re.IGNORECASE  # Default to case-insensitive
+                if hasattr(self, 'search_case_sensitive') and self.search_case_sensitive.isChecked():
+                    flags = 0
+
+                # Check if regex mode enabled
+                if hasattr(self, 'search_regex_mode') and self.search_regex_mode.isChecked():
                     self.search_regex = re.compile(text, flags)
                 else:
                     self.search_regex = re.compile(re.escape(text), flags)

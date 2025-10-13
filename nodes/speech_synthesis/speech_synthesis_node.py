@@ -63,6 +63,22 @@ class SpeechSynthesisNode(NevilNode):
         self.tts_config = config.get('tts', {})
         self.performance_config = config.get('performance', {})
 
+        # Load TTS provider using factory pattern
+        from audio.tts_providers.factory import get_tts_provider
+
+        config_model = self.tts_config.get('model', 'tts-1')
+        self.tts_model = os.getenv('NEVIL_TTS', config_model)
+
+        try:
+            self.tts_provider = get_tts_provider(self.tts_model)
+            if os.getenv('NEVIL_TTS'):
+                self.logger.info(f"TTS Provider: {self.tts_provider.get_provider_name()} (from NEVIL_TTS env var)")
+            else:
+                self.logger.info(f"TTS Provider: {self.tts_provider.get_provider_name()} (from .messages config)")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize TTS provider: {e}")
+            self.tts_provider = None
+
         # TTS processing queue (like v2.0 but simpler)
         max_queue_size = self.performance_config.get('max_queue_size', 5)
         self.tts_queue = queue.PriorityQueue(maxsize=max_queue_size)
@@ -139,6 +155,11 @@ class SpeechSynthesisNode(NevilNode):
         """Process TTS request using v1.0 EXACT pipeline"""
         text = tts_request.get("text", "")
         conversation_id = tts_request.get("conversation_id")
+        queued_at = tts_request.get("queued_at", time.time())
+
+        processing_start = time.time()
+        queue_wait = processing_start - queued_at
+        self.logger.info(f"[TTS TIMING] Processing TTS at {processing_start:.3f} (waited {queue_wait:.3f}s in queue)")
 
         if not text.strip():
             self.logger.warning("Empty text for TTS, skipping")
@@ -149,11 +170,16 @@ class SpeechSynthesisNode(NevilNode):
             conversation_id = self.chat_logger.generate_conversation_id()
             self.logger.warning(f"No conversation_id in TTS request, generated: {conversation_id}")
 
-        # Acquire busy state for speaking
-        self.logger.debug("Acquiring busy state for TTS...")
-        if not busy_state.acquire("speaking"):
+        # Acquire busy state for speaking - TTS can interrupt actions!
+        acquire_start = time.time()
+        self.logger.info(f"[TTS TIMING] Acquiring busy_state at {acquire_start:.3f}...")
+        if not busy_state.acquire("speaking", timeout=5.0, can_interrupt=True, interruptible=False):
             self.logger.error("Could not acquire busy state for TTS, aborting")
             return
+
+        acquire_end = time.time()
+        busy_wait = acquire_end - acquire_start
+        self.logger.info(f"[TTS TIMING] Acquired busy_state after {busy_wait:.3f}s")
 
         try:
             voice = tts_request.get("voice", self.tts_config.get("default_voice", "onyx"))
@@ -168,23 +194,28 @@ class SpeechSynthesisNode(NevilNode):
             # Publish speaking status
             self._publish_speaking_status(True, text, voice)
 
-            # STEP 4: Log TTS synthesis with real timing
+            # STEP 4: Log TTS (combined for backward compatibility)
             with self.chat_logger.log_step(
                 conversation_id, "tts",
                 input_text=text[:200],  # Limit input text length
                 metadata={
                     "voice": voice,
-                    "model": "tts-1",
-                    "volume_db": volume_db
+                    "model": self.tts_model,  # Log actual TTS model used
+                    "volume_db": volume_db,
+                    "queue_wait_ms": queue_wait * 1000,  # Time in queue
+                    "busy_wait_ms": busy_wait * 1000  # Time waiting for busy_state
                 }
             ) as tts_log:
+                generation_start = time.time()
                 success = self.audio_output.generate_and_play_tts(
                     message=text,
-                    openai_helper=self,  # Pass self directly as openai_helper
+                    openai_helper=self,
                     volume_db=volume_db,
                     voice=voice
                 )
+                generation_time = time.time() - generation_start
                 tts_log["output_text"] = "<audio_file>" if success else "<tts_failed>"
+                # Note: total TTS duration includes generation + playback, logged automatically
 
             # STEP 5: Log RESPONSE (playback completion)
             with self.chat_logger.log_step(
@@ -195,7 +226,6 @@ class SpeechSynthesisNode(NevilNode):
                     "device": "speaker"
                 }
             ) as resp_log:
-                # Audio playback is already complete from generate_and_play_tts
                 resp_log["output_text"] = "playback_complete" if success else "playback_failed"
 
             if success:
@@ -215,6 +245,20 @@ class SpeechSynthesisNode(NevilNode):
             with self.speaking_lock:
                 self.is_speaking = False
                 self.current_text = ""
+
+            # STEP 6: Log sleep delay (audio buffer clearing time)
+            with self.chat_logger.log_step(
+                conversation_id, "sleep",
+                input_text="post_tts_delay",
+                metadata={
+                    "reason": "audio_buffer_clear",
+                    "delay_ms": 1000
+                }
+            ) as sleep_log:
+                # Reduced to 1 second to improve response time
+                # Still prevents microphone from picking up residual audio
+                time.sleep(1.0)
+                sleep_log["output_text"] = "delay_complete"
 
             # Publish speaking status
             self._publish_speaking_status(False, "", "")
@@ -291,13 +335,14 @@ class SpeechSynthesisNode(NevilNode):
                 "speed": speed,
                 "source": message.source_node,
                 "timestamp": message.timestamp,
-                "conversation_id": message.data.get("conversation_id")  # Pass through
+                "conversation_id": message.data.get("conversation_id"),  # Pass through
+                "queued_at": time.time()  # Track when queued
             }
 
             # Add to priority queue (lower priority number = higher priority)
             try:
                 self.tts_queue.put_nowait((priority, message.timestamp, tts_request))
-                self.logger.debug(f"Queued TTS request: '{text}' (priority: {priority})")
+                self.logger.info(f"[TTS TIMING] Queued TTS at {tts_request['queued_at']:.3f}: '{text[:50]}'")
 
             except queue.Full:
                 self.logger.warning(f"TTS queue full, dropping request: '{text}'")
@@ -430,13 +475,13 @@ class SpeechSynthesisNode(NevilNode):
 
     def text_to_speech(self, text, output_file, voice="onyx", response_format="wav"):
         """
-        Convert text to speech using OpenAI TTS API
+        Convert text to speech using configured TTS provider
 
         Args:
             text: Text to convert to speech
             output_file: Output file path
             voice: Voice to use (default: onyx)
-            response_format: Output format (default: wav)
+            response_format: Output format (default: wav) - ignored by some providers
 
         Returns:
             bool: True if successful, False otherwise
@@ -444,31 +489,22 @@ class SpeechSynthesisNode(NevilNode):
         if not text or not text.strip():
             return False
 
-        self.logger.debug(f"Starting OpenAI TTS for text: '{text[:50]}...'")
+        if not self.tts_provider:
+            self.logger.error("No TTS provider available")
+            return False
+
+        self.logger.debug(f"Starting TTS ({self.tts_provider.get_provider_name()}) for text: '{text[:50]}...'")
 
         try:
-            import openai
-
-            # Create OpenAI client
-            client = openai.OpenAI(api_key=self.openai_api_key)
-
-            # Generate speech
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice=voice,
-                input=text,
-                response_format=response_format
-            )
-
-            # Save to file
-            with open(output_file, "wb") as f:
-                f.write(response.content)
-
-            self.logger.debug(f"OpenAI TTS completed: {output_file}")
-            return True
+            success = self.tts_provider.generate_speech(text, output_file, voice)
+            if success:
+                self.logger.debug(f"TTS completed: {output_file}")
+            else:
+                self.logger.error(f"TTS generation failed for provider: {self.tts_provider.get_provider_name()}, file: {output_file}")
+            return success
 
         except Exception as e:
-            self.logger.error(f"Error in OpenAI text-to-speech: {e}")
+            self.logger.error(f"Error in text-to-speech ({self.tts_provider.get_provider_name()}): {e}", exc_info=True)
             return False
 
     def get_synthesis_stats(self):
