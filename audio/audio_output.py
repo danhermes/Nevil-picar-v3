@@ -85,13 +85,20 @@ class AudioOutput:
         tts_start = time.time()
         try:
             tts_status = False
+            generation_time = 0
+            playback_time = 0
+
             if message != '':
                 raw_file, processed_file = generate_tts_filename(volume_db=volume_db)
 
+                # Time the generation
+                gen_start = time.time()
                 # EXACT v1.0 OpenAI API call pattern
                 tts_status = openai_helper.text_to_speech(
                     message, raw_file, voice, response_format='wav'
                 )
+                generation_time = time.time() - gen_start
+                print(f'[TTS BREAKDOWN] Generation: {generation_time*1000:.1f}ms')
 
             if tts_status:
                 # Skip sox - use Music() directly like v1.0
@@ -100,15 +107,22 @@ class AudioOutput:
                 with self.speech_lock:
                     self.speech_loaded = True
 
+                # Time the playback
+                play_start = time.time()
                 # Play immediately using Music() VERBATIM
                 self.play_loaded_speech()
+                playback_time = time.time() - play_start
+                print(f'[TTS BREAKDOWN] Playback: {playback_time*1000:.1f}ms')
 
-            print(f'TTS generation time: {time.time() - tts_start:.3f}s')
-            return tts_status
+            total_time = time.time() - tts_start
+            print(f'[TTS BREAKDOWN] Total: {total_time*1000:.1f}ms (gen: {generation_time*1000:.1f}ms + play: {playback_time*1000:.1f}ms)')
+
+            # Return tuple: (success, generation_time, playback_time)
+            return (tts_status, generation_time, playback_time)
 
         except Exception as e:
             print(f'TTS generation error: {e}')
-            return False
+            return (False, 0, 0)
 
     def play_loaded_speech(self):
         """
