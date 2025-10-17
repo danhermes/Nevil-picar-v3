@@ -94,10 +94,31 @@ def cmd_averages(logger, args):
                 print(f"{'-'*60}")
                 if queue_waits:
                     avg_queue = sum(queue_waits) / len(queue_waits)
-                    print(f"  Queue wait:       {avg_queue:>10.1f}ms avg")
+                    print(f"  Queue wait:        {avg_queue:>9.1f}ms avg")
                 if busy_waits:
                     avg_busy = sum(busy_waits) / len(busy_waits)
-                    print(f"  Busy_state wait:  {avg_busy:>10.1f}ms avg")
+                    print(f"  Busy_state wait:   {avg_busy:>9.1f}ms avg")
+
+                # Add generation and playback breakdown
+                gen_times = []
+                play_times = []
+                for row in rows:
+                    try:
+                        meta = json.loads(row['metadata'])
+                        if 'generation_ms' in meta:
+                            gen_times.append(meta['generation_ms'])
+                        if 'playback_ms' in meta:
+                            play_times.append(meta['playback_ms'])
+                    except:
+                        pass
+
+                if gen_times:
+                    avg_gen = sum(gen_times) / len(gen_times)
+                    print(f"  Generation:        {avg_gen:>9.1f}ms avg")
+                if play_times:
+                    avg_play = sum(play_times) / len(play_times)
+                    print(f"  Playback:          {avg_play:>9.1f}ms avg")
+
                 print(f"{'='*60}\n")
     finally:
         conn.close()

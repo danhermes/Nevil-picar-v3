@@ -195,27 +195,41 @@ class SpeechSynthesisNode(NevilNode):
             self._publish_speaking_status(True, text, voice)
 
             # STEP 4: Log TTS (combined for backward compatibility)
+            tts_metadata = {
+                "voice": voice,
+                "model": self.tts_model,  # Log actual TTS model used
+                "volume_db": volume_db,
+                "queue_wait_ms": queue_wait * 1000,  # Time in queue
+                "busy_wait_ms": busy_wait * 1000  # Time waiting for busy_state
+            }
+
             with self.chat_logger.log_step(
                 conversation_id, "tts",
                 input_text=text[:200],  # Limit input text length
-                metadata={
-                    "voice": voice,
-                    "model": self.tts_model,  # Log actual TTS model used
-                    "volume_db": volume_db,
-                    "queue_wait_ms": queue_wait * 1000,  # Time in queue
-                    "busy_wait_ms": busy_wait * 1000  # Time waiting for busy_state
-                }
+                metadata=tts_metadata
             ) as tts_log:
                 generation_start = time.time()
-                success = self.audio_output.generate_and_play_tts(
+                result = self.audio_output.generate_and_play_tts(
                     message=text,
                     openai_helper=self,
                     volume_db=volume_db,
                     voice=voice
                 )
-                generation_time = time.time() - generation_start
+
+                # Unpack result: (success, generation_time, playback_time)
+                if isinstance(result, tuple):
+                    success, gen_time, play_time = result
+                    # Add timing breakdown to metadata
+                    tts_metadata["generation_ms"] = gen_time * 1000
+                    tts_metadata["playback_ms"] = play_time * 1000
+                else:
+                    # Backwards compatibility if old code returns just boolean
+                    success = result
+
+                total_tts_time = time.time() - generation_start
                 tts_log["output_text"] = "<audio_file>" if success else "<tts_failed>"
                 # Note: total TTS duration includes generation + playback, logged automatically
+                # The breakdown is now stored in metadata for analytics
 
             # STEP 5: Log RESPONSE (playback completion)
             with self.chat_logger.log_step(

@@ -123,27 +123,25 @@ class SpeechRecognitionNode(NevilNode):
                     time.sleep(0.5)
                     continue
 
-                # DISCRETE RECORDING CYCLE - Acquire busy state first
-                self.logger.debug("Waiting for busy state...")
-
-                # Acquire busy state - prevents recording during TTS/actions
-                # Using default 2-minute timeout to prevent freezing
-                if not busy_state.acquire("listening"):
-                    self.logger.warning("System busy, skipping recording cycle")
-                    time.sleep(1.0)
-                    continue
-
+                # DISCRETE RECORDING CYCLE
                 try:
-                    # Double-check speaking status after acquiring busy state
+                    # Check if system is busy (TTS playing, navigation moving, etc.)
+                    # If busy, skip this cycle to avoid recording system sounds
+                    if busy_state.is_busy:
+                        self.logger.debug("System busy, skipping recording cycle")
+                        time.sleep(1.0)
+                        continue
+
+                    # Double-check speaking status
                     if self.speaking_active:
-                        self.logger.debug("Skipping recording - system started speaking")
-                        busy_state.release()
+                        self.logger.debug("Skipping recording - system is speaking")
                         time.sleep(0.5)
                         continue
 
-                    self.logger.debug("Starting discrete recording cycle (not busy)...")
+                    self.logger.debug("Starting discrete recording cycle...")
 
-                    # 1. Mic ON - single recording session
+                    # 1. Mic ON - Listen WITHOUT holding busy_state
+                    # This allows TTS to interrupt and speak while we're waiting for speech
                     audio = self.audio_input.listen_for_speech(
                         timeout=10.0,  # Wait for speech
                         phrase_time_limit=10.0  # Max recording time
@@ -151,24 +149,31 @@ class SpeechRecognitionNode(NevilNode):
 
                     # 2. Mic OFF (happens automatically when listen_for_speech returns)
 
+                    # CRITICAL: Check if TTS started speaking while we were listening
+                    # If so, discard the audio (it's likely Nevil hearing himself)
+                    if audio and (busy_state.is_busy or self.speaking_active):
+                        self.logger.warning("⚠️  Discarding audio - TTS started speaking while listening (avoiding self-talk)")
+                        time.sleep(1.0)  # Wait for TTS to finish
+                        continue
+
                     if audio:
-                        # 3. PROCESS: Save → STT → AI → TTS
+                        # 3. PROCESS: Save → STT → AI → TTS (without holding busy_state)
                         self.logger.debug("Processing captured audio...")
                         self._process_audio_discrete(audio)
                     else:
                         self.logger.debug("No speech detected, continuing...")
 
-                finally:
-                    # ALWAYS release the busy state
-                    busy_state.release()
-                    self.logger.debug("Released busy state")
+                except Exception as e:
+                    if not self.stop_event.is_set():
+                        self.logger.error(f"Error in recording cycle: {e}")
+                        time.sleep(2.0)  # Longer pause on error
 
                 # 4. Brief pause before next cycle
                 time.sleep(0.5)
 
             except Exception as e:
                 if not self.stop_event.is_set():
-                    self.logger.error(f"Error in discrete recording cycle: {e}")
+                    self.logger.error(f"Error in discrete recording loop: {e}")
                     time.sleep(2.0)  # Longer pause on error
 
         self.logger.info("Discrete recording loop stopped")
