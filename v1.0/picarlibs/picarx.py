@@ -80,14 +80,14 @@ class Picarx(object):
 
         # --------- grayscale module init ---------
         adc0, adc1, adc2 = [ADC(pin) for pin in grayscale_pins]
-        self.grayscale = Grayscale_Module(adc0, adc1, adc2, reference=None)
+        self.grayscale = Grayscale_Module(adc0, adc1, adc2, reference=self.DEFAULT_LINE_REF)
         # get reference
         self.line_reference = self.config_flie.get("line_reference", default_value=str(self.DEFAULT_LINE_REF))
         self.line_reference = [float(i) for i in self.line_reference.strip().strip('[]').split(',')]
         self.cliff_reference = self.config_flie.get("cliff_reference", default_value=str(self.DEFAULT_CLIFF_REF))
         self.cliff_reference = [float(i) for i in self.cliff_reference.strip().strip('[]').split(',')]
         # transfer reference
-        self.grayscale.reference(self.line_reference)
+        self.grayscale.reference = self.line_reference
 
         # --------- ultrasonic init ---------
         trig, echo= ultrasonic_pins
@@ -224,7 +224,7 @@ class Picarx(object):
     def set_grayscale_reference(self, value):
         if isinstance(value, list) and len(value) == 3:
             self.line_reference = value
-            self.grayscale.reference(self.line_reference)
+            self.grayscale.reference = self.line_reference
             self.config_flie.set("line_reference", self.line_reference)
         else:
             raise ValueError("grayscale reference must be a 1*3 list")

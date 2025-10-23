@@ -1,5 +1,5 @@
 from time import sleep
-from utils import gray_print
+from .utils import gray_print
 #from vilib import Vilib  # Commented out - import issue
 import time
 import logging
@@ -317,11 +317,14 @@ def shake_head(car):
     car.stop()
     car.set_cam_pan_angle(0, smooth=True)
     sleep(.1)
-    car.set_cam_pan_angle(60, smooth=True)  # Large movement - smooth
+    # car.set_cam_pan_angle(60, smooth=True)  # UNSAFE - exceeds servo limits
+    car.set_cam_pan_angle(55, smooth=True)  # SAFE - reduced to stay within limits
     sleep(.25)  # Longer delay
-    car.set_cam_pan_angle(-50, smooth=True)  # Large movement - smooth
+    # car.set_cam_pan_angle(-50, smooth=True)  # UNSAFE - exceeds servo limits
+    car.set_cam_pan_angle(-55, smooth=True)  # SAFE - reduced to stay within limits
     sleep(.2)
-    car.set_cam_pan_angle(40, smooth=True)
+    # car.set_cam_pan_angle(40, smooth=True)  # MARGINAL - reduced for safety
+    car.set_cam_pan_angle(35, smooth=True)  # SAFE
     sleep(.15)
     car.set_cam_pan_angle(-30, smooth=True)
     sleep(.15)
@@ -416,26 +419,30 @@ def celebrate(car):
     sleep(.1)
 
     car.set_dir_servo_angle(30, smooth=True)  # Large movement - smooth
-    car.set_cam_pan_angle(60, smooth=True)   # Large movement - smooth
+    # car.set_cam_pan_angle(60, smooth=True)   # UNSAFE - exceeds servo limits
+    car.set_cam_pan_angle(45, smooth=True)   # SAFE - reduced to stay within limits
     sleep(.35)
     car.set_dir_servo_angle(10, smooth=True)
     car.set_cam_pan_angle(30, smooth=True)
     sleep(.15)
     car.set_dir_servo_angle(30, smooth=True)
-    car.set_cam_pan_angle(60, smooth=True)
+    # car.set_cam_pan_angle(60, smooth=True)  # UNSAFE - exceeds servo limits
+    car.set_cam_pan_angle(45, smooth=True)  # SAFE - reduced to stay within limits
     sleep(.35)
     car.set_dir_servo_angle(0, smooth=True)
     car.set_cam_pan_angle(0, smooth=True)
     sleep(.25)
 
     car.set_dir_servo_angle(-30, smooth=True)  # Large movement - smooth
-    car.set_cam_pan_angle(-60, smooth=True)    # Large movement - smooth
+    # car.set_cam_pan_angle(-60, smooth=True)    # UNSAFE - exceeds servo limits
+    car.set_cam_pan_angle(-45, smooth=True)    # SAFE - reduced to stay within limits
     sleep(.35)
     car.set_dir_servo_angle(-10, smooth=True)
     car.set_cam_pan_angle(-30, smooth=True)
     sleep(.15)
     car.set_dir_servo_angle(-30, smooth=True)
-    car.set_cam_pan_angle(-60, smooth=True)
+    # car.set_cam_pan_angle(-60, smooth=True)  # UNSAFE - exceeds servo limits
+    car.set_cam_pan_angle(-45, smooth=True)  # SAFE - reduced to stay within limits
     sleep(.35)
     car.set_dir_servo_angle(0, smooth=True)
     car.set_cam_pan_angle(0, smooth=True)

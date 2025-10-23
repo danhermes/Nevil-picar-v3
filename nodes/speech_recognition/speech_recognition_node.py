@@ -17,6 +17,20 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from audio.audio_input import AudioInput
 
+# Import direct command handler
+# Add current directory to path for direct_commands import
+import sys
+import os
+_current_dir = os.path.dirname(__file__)
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
+try:
+    from direct_commands import DirectCommandHandler
+except ImportError as e:
+    print(f"Error importing DirectCommandHandler: {e}")
+    raise
+
 
 class SpeechRecognitionNode(NevilNode):
     """
@@ -69,6 +83,9 @@ class SpeechRecognitionNode(NevilNode):
         self.recognition_count = 0
         self.error_count = 0
 
+        # Direct command handler
+        self.direct_command_handler = None
+
     def initialize(self):
         """Initialize speech recognition components"""
         self.logger.info("Initializing Speech Recognition Node...")
@@ -96,6 +113,10 @@ class SpeechRecognitionNode(NevilNode):
 
             # Set listening state for discrete recording
             self.is_listening = True
+
+            # Initialize direct command handler
+            self.direct_command_handler = DirectCommandHandler(self.logger, self.publish)
+            self.logger.info("Direct command handler initialized")
 
             # Start discrete recording thread (v2.0 pattern)
             self.audio_thread = threading.Thread(target=self._discrete_recording_loop, daemon=True)
@@ -256,42 +277,10 @@ class SpeechRecognitionNode(NevilNode):
                 # DEBUG: Log all recognized speech
                 self.logger.info(f"🎤 [SPEECH DEBUG] Recognized: '{text.strip()}'")
 
-                # Check for auto mode triggers BEFORE AI processing
-                text_lower = text.strip().lower()
-                self.logger.info(f"🔍 [TRIGGER DEBUG] Checking triggers in: '{text_lower}'")
-
-                auto_triggers = ['start auto', 'go play', 'seeya nevil', 'see ya nevil',
-                               'auto mode', 'automatic mode', 'go have fun', 'go explore',
-                               'entertain yourself', 'do your thing']
-                stop_triggers = ['stop auto', 'stop playing', 'come back', 'stop automatic',
-                               'manual mode', 'stop exploring']
-
-                # Check for auto mode triggers
-                for trigger in auto_triggers:
-                    self.logger.info(f"🔍 [TRIGGER DEBUG] Checking: '{trigger}' in '{text_lower}' = {trigger in text_lower}")
-                    if trigger in text_lower:
-                        self.logger.info(f"🤖 [AUTO TRIGGER] Detected: '{trigger}' in '{text}'")
-                        # Publish direct auto command to navigation
-                        publish_result = self.publish("auto_mode_command", {
-                            "command": "start",
-                            "trigger": trigger,
-                            "original_text": text.strip(),
-                            "timestamp": time.time()
-                        })
-                        self.logger.info(f"📢 [PUBLISH DEBUG] auto_mode_command publish result: {publish_result}")
-                        return  # Don't process through AI, just trigger auto mode
-
-                for trigger in stop_triggers:
-                    if trigger in text_lower:
-                        self.logger.info(f"🛑 [AUTO TRIGGER] Detected: '{trigger}' in '{text}'")
-                        # Publish direct auto command to navigation
-                        self.publish("auto_mode_command", {
-                            "command": "stop",
-                            "trigger": trigger,
-                            "original_text": text.strip(),
-                            "timestamp": time.time()
-                        })
-                        return  # Don't process through AI, just stop auto mode
+                # Check for direct commands BEFORE AI processing
+                if self.direct_command_handler and self.direct_command_handler.check_and_handle(text.strip()):
+                    self.logger.info("✅ [DIRECT CMD] Command handled, skipping AI processing")
+                    return  # Don't process through AI
 
                 # STEP 3: Calculate metrics and publish to AI
                 recognition_time = time.time() - recognition_start

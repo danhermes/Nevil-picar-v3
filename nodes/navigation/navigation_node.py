@@ -42,39 +42,29 @@ except ImportError:
     spec.loader.exec_module(calibration_module)
     servos_reset = calibration_module.servos_reset
 
-# Import v1.0 action functions
+# Import v1.0 action functions using importlib directly (no sys.path pollution)
+import importlib.util
+nav_dir = os.path.dirname(__file__)
+action_helper_path = os.path.join(nav_dir, 'action_helper.py')
+
 try:
-    from .action_helper import actions_dict
-    print(f"[NAVIGATION DEBUG] Imported actions_dict with relative import: {len(actions_dict)} actions")
-except ImportError as e1:
-    print(f"[NAVIGATION DEBUG] Relative import failed: {e1}")
-    try:
-        from action_helper import actions_dict
-        print(f"[NAVIGATION DEBUG] Imported actions_dict with direct import: {len(actions_dict)} actions")
-    except ImportError as e2:
-        print(f"[NAVIGATION DEBUG] Direct import failed: {e2}")
-        # Dynamic import using absolute path
-        try:
-            import importlib.util
-            import sys
+    spec = importlib.util.spec_from_file_location("action_helper", action_helper_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for {action_helper_path}")
 
-            # First add navigation directory to path so utils can be found
-            nav_dir = os.path.dirname(__file__)
-            if nav_dir not in sys.path:
-                sys.path.insert(0, nav_dir)
-
-            action_helper_path = os.path.join(nav_dir, 'action_helper.py')
-            print(f"[NAVIGATION DEBUG] Trying dynamic import from: {action_helper_path}")
-            spec = importlib.util.spec_from_file_location("action_helper", action_helper_path)
-            action_helper_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(action_helper_module)
-            actions_dict = action_helper_module.actions_dict
-            print(f"[NAVIGATION DEBUG] Dynamic import SUCCESS: {len(actions_dict)} actions")
-        except Exception as e3:
-            print(f"[NAVIGATION DEBUG] Dynamic import failed: {e3}")
-            # Fallback if action_helper not available
-            actions_dict = {}
-            print(f"[NAVIGATION DEBUG] Using empty actions_dict fallback")
+    action_helper_module = importlib.util.module_from_spec(spec)
+    # Set __package__ so relative imports (.utils) work correctly
+    action_helper_module.__package__ = 'nodes.navigation'
+    spec.loader.exec_module(action_helper_module)
+    actions_dict = action_helper_module.actions_dict
+    print(f"[NAVIGATION] Imported actions_dict: {len(actions_dict)} actions")
+except Exception as e:
+    print(f"[NAVIGATION ERROR] Failed to import action_helper: {e}")
+    import traceback
+    traceback.print_exc()
+    # Fallback if action_helper not available
+    actions_dict = {}
+    print(f"[NAVIGATION WARNING] Using empty actions_dict fallback")
 
 # Hardware interface - use local picarx.py
 try:
@@ -152,9 +142,11 @@ class NavigationNode(NevilNode):
         print(f"[NAVIGATION DEBUG] Default speed set to {self.default_speed}")
 
         # Motion initialization - reset to known state
-        print(f"[NAVIGATION DEBUG] Calling reset_mcu()...")
-        reset_mcu() # from robot-hat
-        print(f"[NAVIGATION DEBUG] reset_mcu() complete")
+        # NOTE: reset_mcu() is already called inside Picarx.__init__()
+        # Calling it again here can scramble GPIO/servo assignments!
+        # print(f"[NAVIGATION DEBUG] Calling reset_mcu()...")
+        # reset_mcu() # from robot-hat - REMOVED: Already called in Picarx.__init__
+        # print(f"[NAVIGATION DEBUG] reset_mcu() complete")
         time.sleep(.2)
         servos_reset(self.car) #from calibration.py - pass shared instance
         print(f"[NAVIGATION DEBUG] servos_reset() complete")
@@ -313,8 +305,9 @@ class NavigationNode(NevilNode):
                 else:
                     self.logger.error(f"❌ [{i}/{len(actions)}] Failed to parse action: '{action_str}'")
 
-                # Brief pause between actions
-                time.sleep(0.1)
+                # Pause between actions to allow servos to complete physical movement
+                # v1.0 used 0.5s - servos need time to physically finish moving
+                time.sleep(0.5)
 
             self.logger.info(f"🏁 ACTION SEQUENCE COMPLETE: {len(actions)} actions finished")
 
@@ -717,16 +710,16 @@ class NavigationNode(NevilNode):
                 if self.auto_enabled and self.car:
                     self.logger.info("[AUTO] 👂 Listening window - signaling with head gesture")
                     # Tilt head way back and look right
-                    self.car.set_cam_tilt_angle(30)  # Tilt way back
-                    self.car.set_cam_pan_angle(30)   # Look right
+                    #self.car.set_cam_tilt_angle(30)  # Tilt way back
+                    #self.car.set_cam_pan_angle(30)   # Look right
                     time.sleep(0.3)  # Hold pose briefly
 
                     # Speech recognition window
                     time.sleep(2.0)  # 2 second window for speech commands
 
                     # Return to center position
-                    self.car.set_cam_pan_angle(0)    # Center
-                    self.car.set_cam_tilt_angle(10)  # Normal tilt
+                    #self.car.set_cam_pan_angle(0)    # Center
+                    #self.car.set_cam_tilt_angle(10)  # Normal tilt
                 else:
                     # Just the delay if no hardware
                     time.sleep(2.0)

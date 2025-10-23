@@ -439,6 +439,16 @@ pcm.!default {{
             # Restart any audio services that depend on ALSA config
             self._restart_audio_services()
 
+            # Set HiFiBerry volume to maximum
+            try:
+                self.logger.debug("Setting HiFiBerry volume to maximum...")
+                subprocess.run(['amixer', '-c', card_num, 'sset', 'PCM', '255'],
+                               check=True, capture_output=True)
+                self.logger.info("HiFiBerry volume set to maximum (255)")
+            except subprocess.CalledProcessError as e:
+                self.logger.warning(f"Failed to set HiFiBerry volume: {e}")
+                # Not a fatal error, continue
+
             self.logger.info("Audio device configuration completed successfully")
             return True
 

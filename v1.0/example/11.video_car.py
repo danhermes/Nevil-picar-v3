@@ -1,7 +1,10 @@
-# #!/usr/bin/env python3
-
-from robot_hat.utils import reset_mcu
-from picarx import Picarx
+#!/usr/bin/env python3
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, '/home/dan/vilib')
+from robot_hat import reset_mcu
+from picarlibs.picarx import Picarx
 from vilib import Vilib
 from time import sleep, time, strftime, localtime
 import readchar
@@ -32,11 +35,29 @@ Press key to call the function(non-case sensitive):
 px = Picarx()
 
 def take_photo():
-    _time = strftime('%Y-%m-%d-%H-%M-%S',localtime(time()))
-    name = 'photo_%s'%_time
+    import cv2
+    current_time = time()
+    _time = strftime('%Y-%m-%d-%H-%M-%S',localtime(current_time))
+    milliseconds = int((current_time % 1) * 1000)
+    name = f'photo_{_time}-{milliseconds:03d}'
     path = f"{user_home}/Pictures/picar-x/"
-    Vilib.take_photo(name, path)
-    print('\nphoto save as %s%s.jpg'%(path,name))
+
+    # Convert to grayscale to bypass camera color corruption issue
+    # Grayscale works fine for OpenVSLAM and most computer vision tasks
+
+    img = Vilib.img
+
+    if img is not None:
+        import os
+        if not os.path.exists(path):
+            os.makedirs(name=path, mode=0o751, exist_ok=True)
+
+        # Convert to grayscale - this bypasses the color channel corruption
+        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        cv2.imwrite(path + '/' + name + '.jpg', img_gray)
+        print(f'\nPhoto saved as {path}{name}.jpg (grayscale)')
+    else:
+        print('\nPhoto save failed - no image data available')
 
 
 def move(operate:str, speed):
@@ -63,9 +84,14 @@ def main():
     speed = 0
     status = 'stop'
 
+    print("Starting camera...")
     Vilib.camera_start(vflip=False,hflip=False)
-    Vilib.display(local=True,web=True)
+    print("Camera started, enabling display...")
+    # Disable local display to prevent cv2.imshow errors that crash the camera thread
+    Vilib.display(local=False,web=True)
+    print("Display enabled, waiting 2 seconds...")
     sleep(2)  # wait for startup
+    print("Startup complete")
     print(manual)
     
     while True:

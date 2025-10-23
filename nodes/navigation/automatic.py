@@ -169,7 +169,7 @@ class Automatic:
         else:
             actions.append("resist")
 
-        actions.append("sleep 1.0")
+        actions.append("nod")
 
         self.do_actions(actions, mood)
 
