@@ -175,3 +175,66 @@ class OpenAICompletion(CompletionBase):
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
             raise
+
+    def get_completion_with_image(self, prompt: str, image_data: str,
+                                  temperature: Optional[float] = 0.7,
+                                  max_tokens: Optional[int] = 300) -> str:
+        """
+        Get completion from OpenAI with image analysis (Vision API).
+
+        Args:
+            prompt: Text prompt/question about the image
+            image_data: Base64-encoded image data
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+
+        Returns:
+            Generated completion text describing the image
+        """
+        try:
+            logger.info(f"-------- Calling OpenAI Vision API --------")
+            logger.info(f"Model: {self.model}")
+            logger.info(f"Prompt: {prompt}")
+            logger.info(f"Image data length: {len(image_data)} chars")
+
+            # Build the message with image
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_data}"
+                            }
+                        }
+                    ]
+                }
+            ]
+
+            params = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": max_tokens
+            }
+
+            if temperature is not None:
+                params["temperature"] = temperature
+
+            response = self.client.chat.completions.create(**params)
+
+            logger.info(f"OpenAI Vision response received")
+
+            if response and response.choices and response.choices[0].message.content:
+                return response.choices[0].message.content
+            else:
+                logger.error("No valid response content received from OpenAI Vision")
+                return "I see an image but got no response from the vision API."
+
+        except Exception as e:
+            logger.error(f"OpenAI Vision API error: {e}")
+            return f"I see an image but encountered an error analyzing it: {str(e)}"

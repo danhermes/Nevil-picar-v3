@@ -11,6 +11,7 @@ import threading
 import queue
 from nevil_framework.base_node import NevilNode
 from nevil_framework.busy_state import busy_state
+from nevil_framework.microphone_mutex import microphone_mutex
 from nevil_framework.chat_logger import get_chat_logger
 import sys
 import os
@@ -146,14 +147,16 @@ class SpeechRecognitionNode(NevilNode):
 
                 # DISCRETE RECORDING CYCLE
                 try:
-                    # Check if system is busy (TTS playing, navigation moving, etc.)
-                    # If busy, skip this cycle to avoid recording system sounds
-                    if busy_state.is_busy:
-                        self.logger.debug("System busy, skipping recording cycle")
+                    # Check if microphone is available (no noisy activities like TTS or navigation)
+                    # The microphone mutex allows TTS+navigation to run in parallel
+                    # but blocks speech recognition during either one
+                    if not microphone_mutex.is_microphone_available():
+                        active = microphone_mutex.get_active_activities()
+                        self.logger.debug(f"Microphone unavailable, skipping recording (active: {active})")
                         time.sleep(1.0)
                         continue
 
-                    # Double-check speaking status
+                    # Double-check speaking status (belt and suspenders approach)
                     if self.speaking_active:
                         self.logger.debug("Skipping recording - system is speaking")
                         time.sleep(0.5)
@@ -170,11 +173,12 @@ class SpeechRecognitionNode(NevilNode):
 
                     # 2. Mic OFF (happens automatically when listen_for_speech returns)
 
-                    # CRITICAL: Check if TTS started speaking while we were listening
-                    # If so, discard the audio (it's likely Nevil hearing himself)
-                    if audio and (busy_state.is_busy or self.speaking_active):
-                        self.logger.warning("⚠️  Discarding audio - TTS started speaking while listening (avoiding self-talk)")
-                        time.sleep(1.0)  # Wait for TTS to finish
+                    # CRITICAL: Check if TTS/navigation started while we were listening
+                    # If so, discard the audio (it's likely Nevil hearing himself or servo noise)
+                    if audio and (not microphone_mutex.is_microphone_available() or self.speaking_active):
+                        active = microphone_mutex.get_active_activities()
+                        self.logger.warning(f"⚠️  Discarding audio - noisy activity started while listening (active: {active})")
+                        time.sleep(1.0)  # Wait for activity to finish
                         continue
 
                     if audio:

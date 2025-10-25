@@ -14,6 +14,7 @@ import sys
 from typing import Dict, Any, List, Optional
 from nevil_framework.base_node import NevilNode
 from nevil_framework.busy_state import busy_state
+from nevil_framework.microphone_mutex import microphone_mutex
 from robot_hat import reset_mcu
 
 # Import Automatic module for autonomous behavior
@@ -271,6 +272,12 @@ class NavigationNode(NevilNode):
             self.logger.error("Could not acquire busy state for navigation, aborting action sequence")
             return
 
+        # Acquire microphone mutex - prevents speech recognition during servo noise
+        microphone_mutex.acquire_noisy_activity("navigation")
+
+        # Delay 0.5s before starting movement to better sync with speech
+        time.sleep(0.5)
+
         try:
             self.logger.info(f"🎬 STARTING ACTION SEQUENCE: {len(actions)} actions from '{source_text[:40]}...' (mood: {mood})")
 
@@ -329,6 +336,9 @@ class NavigationNode(NevilNode):
             # Always release busy state
             busy_state.release()
             self.logger.debug("Released busy state after navigation")
+
+            # Release microphone mutex
+            microphone_mutex.release_noisy_activity("navigation")
 
     def _parse_action(self, action_str: str) -> Optional[Dict[str, Any]]:
         """Parse an action string into function and parameters"""

@@ -337,8 +337,8 @@ class Automatic:
             rando = random.random()
             print(f"\n[AUTOMATIC MODE] 🎲 Decision roll: {rando:.3f} ({'GPT Response' if rando < 0.25 else 'Behavior Pattern'})")
             
-            if rando < 0.25:  # 25% chance of GPT
-                use_vision = random.random() < (self.current_mood.get('curiosity', 50) / 100)
+            if rando < 0.75:  # 75% chance of GPT
+                use_vision = random.random() < ((self.current_mood.get('curiosity', 50) + 30) / 100)
                 if use_vision:
                     print(f"[AUTOMATIC MODE] 👁️ Using vision to observe environment")
                 prompt = self.get_auto_prompt(use_vision)

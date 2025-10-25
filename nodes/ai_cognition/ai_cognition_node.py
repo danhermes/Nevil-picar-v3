@@ -206,12 +206,12 @@ class AiCognitionNode(NevilNode):
             # Check if provider supports image analysis
             if hasattr(self.completion_provider, 'get_completion_with_image'):
                 return self.completion_provider.get_completion_with_image(
-                    "I can see an image. Please describe what you observe.",
+                    "You are Nevil, a witty robot dog/car with a camera. Describe what you see in your characteristic poetic, brief, and playful style (1-2 sentences). Be specific about interesting details you notice.",
                     image_data
                 )
             else:
                 self.logger.warning(f"Provider {self.ai_provider_type} does not support image analysis")
-                return "I see an image, but I cannot analyze images with this AI provider."
+                return "I see an image, but my GPT provider doesn't allow that."
         except Exception as e:
             self.logger.error(f"Error processing image with AI provider: {e}")
             return "I see an image but encountered an error during analysis."

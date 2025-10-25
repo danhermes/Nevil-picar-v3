@@ -25,6 +25,7 @@ if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
 if os.getenv('ALSA_VERBOSITY') == '0':
     os.environ['ALSA_VERBOSITY'] = '0'
 from nevil_framework.busy_state import busy_state
+from nevil_framework.microphone_mutex import microphone_mutex
 from audio.audio_output import AudioOutput
 
 
@@ -171,15 +172,19 @@ class SpeechSynthesisNode(NevilNode):
             self.logger.warning(f"No conversation_id in TTS request, generated: {conversation_id}")
 
         # Acquire busy state for speaking - TTS can interrupt actions!
+        # DISABLED: Commenting out busy_state to allow speech and actions simultaneously
         acquire_start = time.time()
-        self.logger.info(f"[TTS TIMING] Acquiring busy_state at {acquire_start:.3f}...")
-        if not busy_state.acquire("speaking", timeout=5.0, can_interrupt=True, interruptible=False):
-            self.logger.error("Could not acquire busy state for TTS, aborting")
-            return
+        # self.logger.info(f"[TTS TIMING] Acquiring busy_state at {acquire_start:.3f}...")
+        # if not busy_state.acquire("speaking", timeout=5.0, can_interrupt=True, interruptible=False):
+        #     self.logger.error("Could not acquire busy state for TTS, aborting")
+        #     return
+
+        # NEW: Use microphone mutex instead - allows parallel TTS+navigation but blocks speech recognition
+        microphone_mutex.acquire_noisy_activity("speaking")
 
         acquire_end = time.time()
         busy_wait = acquire_end - acquire_start
-        self.logger.info(f"[TTS TIMING] Acquired busy_state after {busy_wait:.3f}s")
+        # self.logger.info(f"[TTS TIMING] Acquired busy_state after {busy_wait:.3f}s")
 
         try:
             voice = tts_request.get("voice", self.tts_config.get("default_voice", "onyx"))
@@ -278,8 +283,12 @@ class SpeechSynthesisNode(NevilNode):
             self._publish_speaking_status(False, "", "")
 
             # Release busy state
-            busy_state.release()
-            self.logger.debug("Released busy state after TTS")
+            # DISABLED: Commenting out busy_state to allow speech and actions simultaneously
+            # busy_state.release()
+            # self.logger.debug("Released busy state after TTS")
+
+            # NEW: Release microphone mutex
+            microphone_mutex.release_noisy_activity("speaking")
 
     def _publish_speaking_status(self, speaking, text, voice):
         """Publish speaking status change"""
@@ -446,9 +455,13 @@ class SpeechSynthesisNode(NevilNode):
             # Play the sound using the audio output's Music() instance
             if self.audio_output and self.audio_output.music:
                 # Acquire busy state for sound playback
-                if not busy_state.acquire("sound_effect"):
-                    self.logger.warning("Could not acquire busy state for sound effect")
-                    return
+                # DISABLED: Commenting out busy_state to allow sounds and actions simultaneously
+                # if not busy_state.acquire("sound_effect"):
+                #     self.logger.warning("Could not acquire busy state for sound effect")
+                #     return
+
+                # NEW: Use microphone mutex - allows parallel sounds+navigation but blocks speech recognition
+                microphone_mutex.acquire_noisy_activity("sound_effect")
 
                 try:
                     self.audio_output.music.sound_play(sound_file, volume)
@@ -457,7 +470,11 @@ class SpeechSynthesisNode(NevilNode):
                         time.sleep(0.1)
                     self.logger.info(f"✓ Sound effect completed: {effect}")
                 finally:
-                    busy_state.release()
+                    # DISABLED: Commenting out busy_state to allow sounds and actions simultaneously
+                    # busy_state.release()
+
+                    # NEW: Release microphone mutex
+                    microphone_mutex.release_noisy_activity("sound_effect")
             else:
                 self.logger.error("Audio output not available for sound effects")
 
