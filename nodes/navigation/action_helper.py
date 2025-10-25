@@ -3,6 +3,7 @@ from .utils import gray_print
 #from vilib import Vilib  # Commented out - import issue
 import time
 import logging
+from .extended_gestures import register_extended
 
 # Get logger for action_helper module
 logger = logging.getLogger('navigation')
@@ -597,8 +598,8 @@ actions_dict = {
     #"come here": come_here,  # Commented out - not implemented
 }
 
-
-
+actions_dict = register_extended(actions_dict)
+print(f"[NAVIGATION] Registered extended gestures: {len(actions_dict)} actions")
 
 
 
