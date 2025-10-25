@@ -259,7 +259,7 @@ class AiCognitionNode(NevilNode):
                     "confidence": confidence
                 }
             ) as gpt_log:
-                response_text = self._generate_response(text)
+                response_text = self._generate_response(text, conversation_id=conversation_id)
                 gpt_log["output_text"] = response_text if response_text else "<no_response>"
 
             if response_text:
@@ -296,7 +296,7 @@ class AiCognitionNode(NevilNode):
             self.logger.error(f"Error processing voice command: {e}")
             self._set_system_mode("error", f"processing_error: {e}")
 
-    def _generate_response(self, input_text):
+    def _generate_response(self, input_text, conversation_id=None):
         """Generate response using completion provider or fallback"""
         try:
             if not input_text.strip():
@@ -305,7 +305,7 @@ class AiCognitionNode(NevilNode):
             text = input_text.strip()
 
             if self.mode == "ai" and self.completion_provider:
-                return self._generate_ai_response(text)
+                return self._generate_ai_response(text, conversation_id=conversation_id)
             elif self.mode == "echo":
                 return f"I heard you say: {text}"
             else:
@@ -317,7 +317,7 @@ class AiCognitionNode(NevilNode):
             self.ai_error_count += 1
             return "I had trouble processing that."
 
-    def _generate_ai_response(self, user_input):
+    def _generate_ai_response(self, user_input, conversation_id=None):
         """Generate response using completion provider (factory-based)"""
         try:
             # Add user message to conversation history
@@ -356,7 +356,8 @@ class AiCognitionNode(NevilNode):
                 self._publish_actions_and_mood(
                     parsed_response,
                     user_input,
-                    {"text": user_input}
+                    {"text": user_input},
+                    conversation_id=conversation_id
                 )
 
                 # Return only the answer field
@@ -453,7 +454,7 @@ class AiCognitionNode(NevilNode):
         except Exception as e:
             self.logger.error(f"❌ Error handling take_snapshot: {e}")
 
-    def _publish_actions_and_mood(self, parsed_response: dict, original_text: str, original_command: dict):
+    def _publish_actions_and_mood(self, parsed_response: dict, original_text: str, original_command: dict, conversation_id=None):
         """Publish robot actions and mood changes to navigation node"""
         try:
             current_time = time.time()
@@ -468,6 +469,10 @@ class AiCognitionNode(NevilNode):
                     "priority": 100,
                     "timestamp": current_time
                 }
+
+                # Add conversation_id if provided (for autonomous mode correlation)
+                if conversation_id:
+                    robot_action_data["conversation_id"] = conversation_id
 
                 if self.publish("robot_action", robot_action_data):
                     self.logger.info(f"✓ Published robot actions: {actions}")

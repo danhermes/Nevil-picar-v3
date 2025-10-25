@@ -1,391 +1,444 @@
-# Automatic Module Documentation
+# Automatic Mode Documentation (v3.0)
 
 ## Overview
-The `automatic.py` module (`/home/dan/Nevil-picar-v3/nodes/navigation/automatic.py`) provides Nevil PiCar with autonomous behavior capabilities, enabling the robot to act independently with personality-driven behaviors and dynamic responses.
+The `automatic.py` module provides Nevil with **100% GPT-driven autonomous behavior**. Unlike traditional autonomous systems with hardcoded sequences, Nevil's AI makes ALL decisions about movement, speech, and silence based on mood-driven behavioral guidelines. Every autonomous cycle is unique and environment-responsive.
 
 ## Quick Start Examples
 
 ```python
 # Say to Nevil:
-"Go play"           # Starts auto mode with current mood
-"Seeya Nevil"       # Dismissive way to start auto mode
-"Stop playing"      # Stops auto mode, ex. come back
-"Set mood playful"  # Changes to playful personality
+"Go play"              # Starts auto mode with current mood
+"Seeya Nevil"          # Dismissive way to start auto mode
+"Stop auto"            # Stops auto mode
+"Come back"            # Recalls Nevil from auto mode
+"Set mood playful"     # Changes to playful personality
+"Set mood sleepy"      # Changes to sleepy personality
 ```
+
+## Key Features
+
+### 🤖 100% GPT-Driven Decision Making
+- **No hardcoded behaviors** - All movement and speech controlled by AI
+- **No pre-scripted vocalizations** - GPT generates all speech dynamically
+- **Silence is valid** - GPT can choose inactivity, pauses, or quiet observation
+- **Environment-responsive** - High vision usage (70% when speaking, 35% when silent)
+- **Unique every time** - Each autonomous cycle produces different behavior
+
+### 🎭 8 Distinct Mood Personalities
+
+| Mood | Energy | Sociability | Speech Freq | Listen Window | Character |
+|------|--------|-------------|-------------|---------------|-----------|
+| **playful** | 90 | 90 | 60% | 12.5s | Energetic, social, whimsical |
+| **brooding** | 30 | 10 | 20% | 11.0s | Quiet, introspective, withdrawn |
+| **curious** | 60 | 50 | 50% | 14.0s | Investigative, observational |
+| **melancholic** | 20 | 20 | 25% | 15.0s | Slow, gentle, wistful |
+| **zippy** | 95 | 60 | 65% | **5.8s** | Fast, bouncy, **impatient!** |
+| **lonely** | 50 | 80 | 55% | **16.7s** | Seeks interaction, patient |
+| **mischievous** | 85 | 50 | 60% | 11.5s | Playful, sneaky, energetic |
+| **sleepy** | 15 | 10 | 15% | 14.5s | Minimal activity, very patient |
+
+### ⏱️ Mood-Based Listening Windows (5-20 seconds)
+After each autonomous cycle, Nevil pauses to listen for user interruption. Duration depends on mood:
+
+**Formula:** `(sociability × 0.15) + ((100-energy) × 0.15) + 5`
+
+- **Zippy mood**: ~5.8s (impatient, wants to keep moving!)
+- **Lonely mood**: ~16.7s (patiently waiting for company)
+- **High energy moods**: Shorter windows (restless, can't wait)
+- **Low energy moods**: Longer windows (patient, lingering)
+- **High sociability moods**: Longer windows (hoping for interaction)
+
+### 🎨 3-Speed Gesture System
+All 120+ gestures support speed modifiers for expressive movement:
+- **:slow** - 2x pause duration (languid, thoughtful, melancholic)
+- **:med** - 1x pause duration (normal, default)
+- **:fast** - 0.5x pause duration (zippy, excited, nervous)
+
+GPT chooses speeds to match mood and create rhythmic variety.
+
+**Examples:**
+```json
+{
+  "actions": ["ponder:slow", "sigh:slow", "sad_turnaway:slow"],
+  "answer": "Just thinking..."
+}
+
+{
+  "actions": ["happy_spin:fast", "jump_excited:fast", "cheer_wave:fast"],
+  "answer": "Wheee!"
+}
+```
+
+### 👁️ High Vision Integration
+- **70% vision usage** when Nevil will speak (responds to environment)
+- **35% vision usage** when Nevil is silent (quiet observation)
+- Enables context-aware comments about surroundings
+- GPT sees and reacts to what's in front of Nevil
+
+### 🔄 Reduced Mood Change Frequency
+- Moods persist **15-30 cycles** for stable personality periods
+- **30% chance** to change when threshold reached
+- Creates consistent personality sessions instead of constant mood swings
+- Previous system changed every cycle - now much more stable
+
+### 🎤 Microphone Mutex Architecture
+- **Speech synthesis ↔ Speech recognition**: MUTUAL EXCLUSION (prevents self-talk)
+- **Navigation ↔ Speech recognition**: MUTUAL EXCLUSION (blocks during servo noise)
+- **Speech synthesis ↔ Navigation**: PARALLEL (can talk and move simultaneously!)
+- **0.5s delay** before navigation starts for better speech synchronization
 
 ## How to Start Autonomous Mode
 
 ### Voice Commands (Easiest)
-Simply say to Nevil:
 
 **Start Auto Mode:**
-- **"Start auto"** - starts autonomous behavior
-- **"Auto mode"** / **"Automatic mode"** - also works
-- **"Go play"** - friendly way to start auto mode
-- **"Seeya Nevil"** / **"See ya Nevil"** - dismissive trigger
-- **"Go have fun"** / **"Go explore"** - exploratory triggers
-- **"Entertain yourself"** / **"Do your thing"** - independent triggers
+- "Start auto" / "Auto mode" / "Automatic mode"
+- "Go play" / "Go have fun" / "Go explore"
+- "Seeya Nevil" / "See ya Nevil" (dismissive)
+- "Entertain yourself" / "Do your thing"
 
 **Stop Auto Mode:**
-- **"Stop auto"** / **"Stop automatic"** - disables autonomous behavior
-- **"Stop playing"** / **"Stop exploring"** - activity-specific stops
-- **"Come back"** - recall command
-- **"Manual mode"** - switch to manual control
+- "Stop auto" / "Stop automatic" / "Stop playing"
+- "Come back" / "Manual mode"
 
 **Mood Control:**
-- **"Set mood [mood_name]"** - changes personality
-- Available moods: playful, brooding, curious, melancholic, zippy, lonely, mischievous, sleepy
+- "Set mood playful" / "Set mood curious" / "Set mood sleepy"
+- Available: playful, brooding, curious, melancholic, zippy, lonely, mischievous, sleepy
 
 ### From Terminal
 ```bash
-# Launch Nevil with auto mode enabled from start
-python3 -m nevil_framework.launcher --auto
-
-# Or launch normally and use voice command
+# Launch Nevil normally, then use voice
 python3 -m nevil_framework.launcher
-# Then say "auto mode" to Nevil
+# Then say "go play" to Nevil
+
+# Or use the start script
+./nevil start
+# Then say "auto mode"
 ```
 
 ### Programmatically
 ```python
 # Enable autonomous mode
-self.auto_enabled = True
-self.auto_thread = threading.Thread(target=self.run_auto)
-self.auto_thread.start()
+navigation_node.start_auto_mode()
 
 # Disable autonomous mode
-self.auto_enabled = False
+navigation_node.stop_auto_mode()
 
 # Change mood
-self.auto.set_mood("playful")  # or curious, sleepy, mischievous, etc.
+navigation_node.automatic.set_mood("playful")
 ```
-
-### What Happens in Auto Mode
-Once enabled, Nevil will:
-1. Wait 5 seconds between interaction cycles
-2. Each cycle, randomly choose:
-   - **25% chance**: Make a GPT-powered comment (may use camera)
-   - **75% chance**: Perform a mood-based behavior with possible vocalization
-3. Continue until you say "Stop auto" or disable programmatically
-
-The robot exhibits behaviors like exploring, dancing, singing, and making contextual comments based on its current mood.
 
 ## What Happens in Auto Mode
 
-When enabled, Nevil exhibits autonomous behaviors based on its current mood:
-
-1. **Movement patterns** - Exploring, circling, dancing based on energy level
-2. **Vocalizations** - Context-appropriate comments like "What's that?", "Wheee!", "Hmm..."
-3. **Expressions** - Head movements, body twists, celebrations
-4. **Sound effects** - Honks and engine sounds based on mood
-5. **GPT responses** - 25% chance of AI-generated contextual comments
-
-The robot continues these behaviors until you tell it to stop or it runs out of energy (based on mood).
-
-## Architecture
-
-### Mood System
-The module defines 8 distinct personality profiles that influence behavior selection:
-
-| Mood | Volume | Curiosity | Sociability | Whimsy | Energy | Character |
-|------|--------|-----------|-------------|--------|---------|-----------|
-| **playful** | 85 | 70 | 90 | 95 | 90 | High energy, very social and whimsical |
-| **brooding** | 25 | 40 | 10 | 15 | 30 | Quiet, antisocial, low energy |
-| **curious** | 40 | 85 | 50 | 35 | 60 | Investigation-focused, moderate energy |
-| **melancholic** | 30 | 30 | 20 | 20 | 20 | Low across all traits |
-| **zippy** | 70 | 60 | 60 | 50 | 95 | Maximum energy, balanced other traits |
-| **lonely** | 60 | 40 | 80 | 20 | 50 | High sociability, seeks interaction |
-| **mischievous** | 90 | 75 | 50 | 95 | 85 | Loud, whimsical, high energy |
-| **sleepy** | 10 | 20 | 10 | 5 | 15 | Minimal activity across all traits |
-
-### Behavior System
-
-#### Available Behaviors
-1. **explore** - Forward movement with head turns based on curiosity
-2. **rest** - Act cute animation with duration based on energy
-3. **sleep** - Depressed animation followed by long pause
-4. **fidget** - Twist body or shake head based on energy level
-5. **address** - Wave hands or resist based on sociability
-6. **play** - Engine sounds, turning, waving with optional honks
-7. **panic** - Quick backward movement with alarm sounds
-8. **circle** - Spinning in place, more rotations with higher energy
-9. **sing** - Celebratory movements with honking sounds
-10. **mutter** - Thinking animations with hand rubbing
-11. **dance** - Complex movement sequences with celebrations
-
-#### Behavior Selection Algorithm
-```python
-# Base weights define default probability
-BEHAVIOR_BASE_WEIGHTS = {
-    "explore": 0.3,    # 30% base chance
-    "rest": 0.1,       # 10% base chance
-    "sleep": 0.2,      # 20% base chance
-    # ... etc
-}
-
-# Trait biases modify weights based on mood
-BEHAVIOR_TRAIT_BIASES = {
-    "explore": {"curiosity": 1.2, "energy": 1.1},
-    # Higher curiosity/energy increases explore chance
-}
-```
-
-The system computes final weights by:
-1. Starting with base weight
-2. Applying mood trait modifiers
-3. Using weighted random selection
-
-### Vocalization System
-Each behavior has associated vocal phrases that may trigger based on mood traits:
-
-```python
-vocalization_chance = (energy + whimsy + sociability + curiosity + volume) / 500
-```
-
-Examples:
-- **explore**: "What's that?", "Interesting...", "Let's see..."
-- **panic**: "AAAHHHHH!", "Look out!", "Emergency!"
-- **play**: "Wheee!", "Watch this!", "Fun fun fun!"
-
-### Autonomous Loop
-
-The main control flow (`run_idle_loop`):
+### Autonomous Cycle Flow
 
 ```
-┌─────────────────────────────┐
-│  Check 5-second cooldown    │
-└──────────┬──────────────────┘
-           │
-           ▼
-┌─────────────────────────────┐
-│  Random choice (0-1)        │
-└──────────┬──────────────────┘
-           │
-     ┌─────┴─────┐
-     │ < 0.25?   │
-     └─────┬─────┘
-           │
-    ┌──────┴──────┐
-    │             │
-    ▼             ▼
-┌─────────┐  ┌─────────┐
-│   GPT   │  │Behavior │
-│Response │  │ System  │
-└─────────┘  └─────────┘
-    │             │
-    └──────┬──────┘
-           │
-           ▼
-┌─────────────────────────────┐
-│   Execute Actions/Speech    │
-└─────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ 1. Check mood change threshold          │
+│    (Every 15-30 cycles, 30% chance)     │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 2. Determine vision usage                │
+│    Speaking: 70%, Silent: 35%           │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 3. Generate autonomous prompt            │
+│    "You are in [mood] mode..."          │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 4. Call GPT with prompt + vision        │
+│    100% GPT decides actions & speech    │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 5. Execute GPT's chosen actions         │
+│    Parallel with speech (microphone     │
+│    mutex prevents self-talk)            │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 6. Speak GPT's message (if any)         │
+│    Empty answer = silent cycle          │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 7. Increment cycle counter               │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 8. Mood-based listening window           │
+│    5.8s (zippy) to 16.7s (lonely)       │
+│    User can interrupt with voice        │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│ 9. Loop back (unless stopped)            │
+└─────────────────────────────────────────┘
 ```
 
-- **25% chance**: GPT-powered response
-  - May use vision based on curiosity level
-  - Generates 1-5 word comments
-  - Examples: "Hey Dan", "What's that?", "Cool room!"
+### GPT Behavioral Guidelines (in System Prompt)
 
-- **75% chance**: Pre-programmed behavior
-  - Selects behavior based on weighted mood traits
-  - May include vocalization
-  - Executes action sequence
+The system prompt includes detailed guidelines for each mood:
 
-## Class Interface
+**Playful** (energy:90, soc:90, speech:60%)
+- Energetic movements, frequent speech, social gestures
+- Uses fast/med speeds: `happy_spin:fast`, `playful_bounce:med`
+- Talk 60% of cycles
 
-### Initialization
+**Zippy** (energy:95, soc:60, speech:65%)
+- Fast, bouncy, energetic!
+- Uses fast gestures: `charge_forward:fast`, `zigzag:fast`, `eager_start:fast`
+- Very active speech - talk 65% of cycles
+
+**Sleepy** (energy:15, soc:10, speech:15%)
+- Low energy, minimal activity, long pauses
+- Uses slow gestures: `yawn:slow`, `sleep_mode:slow`, `idle_breath:slow`
+- Very sparse speech - talk only 15% of cycles
+
+**Lonely** (energy:50, soc:80, speech:55%)
+- Seeking interaction, gentle social gestures
+- Uses slow/med speeds: `bashful_hide:slow`, `greet_wave:med`, `call_attention:med`
+- Moderate speech - talk 55% of cycles
+
+*And 4 more moods with detailed guidelines...*
+
+## Architecture Details
+
+### Class: Automatic
+
+**Initialization:**
 ```python
 automatic = Automatic(nevil_instance)
 ```
 
-### Key Methods
+**Key Attributes:**
+- `current_mood_name` - Current mood string (e.g., "playful")
+- `current_mood` - Mood profile dict with traits
+- `cycles_since_mood_change` - Counter for mood persistence
+- `mood_change_threshold` - Random 15-30 cycle threshold
+- `MOOD_PROFILES` - All 8 mood definitions
+
+**Key Methods:**
 
 #### `run_idle_loop(cycles=1)`
-Main autonomous behavior loop. Runs specified number of behavior cycles.
-
-#### `set_mood(mood_name)`
-Changes current mood profile. Valid names: playful, brooding, curious, melancholic, zippy, lonely, mischievous, sleepy
-
-#### `do_actions(actions, mood=None)`
-Queues action list for execution by main action thread. Thread-safe with locks.
-
-#### `get_cycle_count()`
-Determines number of autonomous cycles based on energy/whimsy (2-10 range).
-
-### Thread Safety
-- Uses `nevil.action_lock` for action queue management
-- Uses `nevil.speech_lock` for TTS coordination
-- Respects `nevil.auto_enabled` flag for clean shutdown
-
-## Integration
-
-The module integrates with the main Nevil system:
-- Receives reference to main Nevil instance
-- Queues actions to `nevil.actions_to_be_done`
-- Uses `nevil.handle_TTS_generation()` for speech
-- Calls `nevil.call_GPT()` for dynamic responses
-- Monitors `nevil.auto_enabled` for control
-
-## Configuration
-
-### Adjusting Behavior Probability
-Modify `BEHAVIOR_BASE_WEIGHTS` to change default behavior frequency.
-
-### Adding New Moods
-Add entries to `MOOD_PROFILES` dictionary with all 5 trait values (0-100 scale).
-
-### Customizing Vocalizations
-Edit `BEHAVIOR_VOCALIZATIONS` dictionary to add/modify phrases for each behavior.
-
-### GPT Response Examples
-Modify `AUTO_PROMPT_EXAMPLES` to influence GPT response style.
-
-## Usage Example
+Main autonomous behavior loop. Runs specified number of GPT-driven cycles.
 
 ```python
-# In main Nevil system
-from nodes.navigation.automatic import Automatic
+def run_idle_loop(self, cycles=1):
+    # Check mood change threshold
+    if self.cycles_since_mood_change >= self.mood_change_threshold:
+        self.maybe_change_mood()
 
-# Initialize
-self.auto = Automatic(self)
+    # Determine vision usage
+    use_vision = self.should_use_vision()
 
-# Set mood
-self.auto.set_mood("playful")
+    # Get GPT response
+    prompt = self.get_autonomous_prompt(use_vision)
+    actions, message = self.nevil.call_GPT(prompt, use_image=use_vision)
 
-# Run autonomous behavior
-if self.auto_enabled:
-    cycles = self.auto.get_cycle_count()
-    self.auto.run_idle_loop(cycles)
+    # Execute
+    if actions:
+        self.do_actions(actions)
+    if message:
+        self.nevil.handle_TTS_generation(message)
+
+    self.cycles_since_mood_change += 1
 ```
 
-## Integration with Navigation Node (v3.0)
+#### `should_use_vision()`
+Probabilistic vision usage based on mood speech frequency:
+- Likely speaking: 70% use vision
+- Likely silent: 35% use vision
 
-The Automatic module is now integrated directly into the Navigation Node, allowing seamless transitions between manual control and autonomous behavior.
+#### `maybe_change_mood()`
+30% chance to change to random new mood when threshold reached.
 
-### How It Works
+#### `set_mood(mood_name)`
+Manually change mood. Updates profile and resets cycle counter.
 
-1. **Voice Trigger Detection**: The navigation node monitors incoming messages for auto mode trigger phrases
-2. **Mode Activation**: When triggered, creates an autonomous behavior thread
-3. **Action Execution**: Autonomous actions are queued to the same action processing pipeline as manual commands
-4. **Speech Integration**: TTS requests are published to the speech node for vocalization
+#### `get_autonomous_prompt(use_vision)`
+Generates simple prompt referencing system guidelines:
+```python
+prompt = f"You are in autonomous mode with mood '{self.current_mood_name}'. "
+prompt += "Respond according to your mood behavioral guidelines. "
+prompt += "Remember: speech is optional, silence and pauses are valid responses."
+```
 
-### Implementation Details
+### Thread Safety
+- Uses `nevil.action_lock` for action queue coordination
+- Uses `nevil.speech_lock` for TTS coordination
+- Respects `nevil.auto_enabled` flag for clean shutdown
+- Microphone mutex prevents speech recognition during TTS/navigation
 
-The navigation node creates a mock Nevil interface that provides:
-- Action queueing system
-- TTS request publishing
-- Thread-safe locks for coordination
-- GPT integration hooks (for future enhancement)
+## Integration with Navigation Node
 
 ### Message Flow
-
 ```
-User speaks → Speech Recognition → AI Cognition → Navigation Node
-                                                    ↓
-                                        Detect auto trigger phrase
-                                                    ↓
-                                            Start auto thread
-                                                    ↓
-                                        Automatic.run_idle_loop()
-                                                    ↓
-                                        Queue actions & TTS
-                                                    ↓
-                                        Execute via action thread
+User: "Go play"
+    ↓
+Speech Recognition → AI Cognition → Navigation Node
+    ↓
+Detects auto trigger → Publishes auto_mode_command
+    ↓
+Navigation Node receives command
+    ↓
+Calls start_auto_mode()
+    ↓
+Creates auto thread → Runs Automatic.run_idle_loop()
+    ↓
+Each cycle: GPT call → Actions + Speech
+    ↓
+Actions queued to action_queue (priority 50)
+    ↓
+Speech published to speech_synthesis via TTS
+    ↓
+Mood-based listening window (5-20s)
+    ↓
+Repeat until "Stop auto" or user interrupts
+```
+
+### Mock Nevil Interface
+Navigation node provides automatic module with:
+- `call_GPT(prompt, use_image)` - AI cognition integration
+- `handle_TTS_generation(message)` - Speech synthesis
+- `action_lock` - Thread-safe action queueing
+- `speech_lock` - TTS coordination
+- `auto_enabled` - Control flag
+
+## Mood Examples
+
+### Zippy Mood Behavior
+```
+Cycle 1:
+  Vision: Yes (responding to environment)
+  GPT: {"actions": ["charge_forward:fast", "zigzag:fast", "happy_spin:fast"],
+        "answer": "Wheee!"}
+  Listen window: 5.8s (impatient!)
+
+Cycle 2:
+  Vision: No
+  GPT: {"actions": ["eager_start:fast", "jump_excited:fast"],
+        "answer": ""}
+  Listen window: 5.8s (wants to keep moving)
+```
+
+### Sleepy Mood Behavior
+```
+Cycle 1:
+  Vision: No
+  GPT: {"actions": ["yawn:slow", "idle_breath:slow"],
+        "answer": ""}
+  Listen window: 14.5s (very patient)
+
+Cycle 2:
+  Vision: No
+  GPT: {"actions": [],
+        "answer": ""}  # Complete inactivity
+  Listen window: 14.5s (just sitting quietly)
+
+Cycle 3:
+  Vision: Yes (rare for sleepy)
+  GPT: {"actions": ["stretch:slow"],
+        "answer": "Zzz..."}
+  Listen window: 14.5s
+```
+
+### Lonely Mood Behavior
+```
+Cycle 1:
+  Vision: Yes
+  GPT: {"actions": ["call_attention:med", "greet_wave:med", "listen_close:slow"],
+        "answer": "Anyone there?"}
+  Listen window: 16.7s (patiently waiting for response)
+
+Cycle 2:
+  Vision: Yes
+  GPT: {"actions": ["bashful_hide:slow", "hello_friend:med"],
+        "answer": ""}
+  Listen window: 16.7s (still hoping for interaction)
 ```
 
 ## Performance Considerations
 
-- 5-second cooldown prevents interaction overlap
-- Actions execute synchronously to prevent conflicts
-- Sleep operations allow for natural pacing
-- Thread locks ensure safe multi-threaded operation
-- Priority queue ensures auto actions don't block manual commands
-
-## Detailed Behavior Examples
-
-### Playful Mood (High Energy + Whimsy)
-```
-Actions: Quick forward movements, frequent honks, celebrations
-Speech: "Wheee!", "Watch this!", "Fun fun fun!"
-Likely behaviors: play (honking), dance (celebrations), explore (fast)
-```
-
-### Curious Mood (High Curiosity)
-```
-Actions: Explore with head turns, thinking gestures
-Speech: "What's that?", "Interesting...", "Let me see..."
-Likely behaviors: explore (with investigation), circle, think
-```
-
-### Sleepy Mood (Low Energy)
-```
-Actions: Slow movements, depressed pose, long rests
-Speech: "Zzzz...", minimal vocalizations
-Likely behaviors: sleep, rest, minimal activity
-```
-
-### Mischievous Mood (High Volume + Whimsy)
-```
-Actions: Loud honks, playful movements, celebrations
-Speech: "Boogie!", "Chicken look at this!"
-Likely behaviors: play (loud), dance, sing (noisy)
-```
-
-## Common Use Cases
-
-### Entertainment Mode
-```
-User: "Go play"
-Nevil: "Okay, I'll go play now!"
-[Enters auto mode, performs autonomous behaviors]
-```
-
-### Demonstration Mode
-```
-User: "Set mood playful"
-Nevil: "Feeling playful now!"
-User: "Go have fun"
-[Shows off playful behaviors for demonstration]
-```
-
-### Background Activity
-```
-User: "Seeya Nevil"
-Nevil: [Autonomously explores while user does other tasks]
-User: "Come back"
-Nevil: "I'm back!"
-```
-
-## Debugging
-
-Monitor console output prefixes:
-- `[AUTO]` - Auto mode state changes and control
-- `[auto]` - Autonomous mode decisions
-- `[actions]` - Action queue activity
-- `[vocal]` - Vocalization probability calculations
-- `[auto speech]` - Generated speech content
-- `[auto vocalization]` - Selected vocal phrase
-- `[system]` - System-level information
+- **Mood stability**: 15-30 cycle persistence prevents erratic behavior
+- **Listening windows**: Mood-based timing allows natural interruption
+- **Parallel execution**: Speech and movement happen simultaneously
+- **Microphone mutex**: Prevents Nevil from hearing himself
+- **Vision throttling**: Smart usage prevents excessive API calls
+- **Thread safety**: Locks prevent action queue conflicts
+- **Priority queueing**: Auto actions use priority 50 (medium)
 
 ## Troubleshooting
 
 ### Auto Mode Won't Start
-- Check that navigation node is running
-- Verify trigger phrase is recognized (check logs for `[AUTO]`)
-- Ensure no other blocking actions in queue
+- Check navigation node is running: `./nevil validate`
+- Verify trigger phrase recognized (check logs for `[AUTO COMMAND]`)
+- Ensure no blocking errors in navigation node
 
 ### Auto Mode Won't Stop
-- Use "Stop auto" or "Come back" commands
-- Check if action queue is blocked
-- Restart navigation node if necessary
+- Use clear stop command: "Stop auto" or "Come back"
+- Check listening window hasn't expired (wait for next cycle)
+- If stuck, restart: `pkill -f navigation` then `./nevil start`
 
-### Mood Not Changing
-- Use exact mood names: playful, brooding, curious, melancholic, zippy, lonely, mischievous, sleepy
-- Say "Set mood [name]" clearly
-- Check logs for mood transition confirmation
+### Mood Not Changing When Requested
+- Use exact mood names (case-insensitive): playful, brooding, curious, melancholic, zippy, lonely, mischievous, sleepy
+- Say "Set mood [name]" clearly during listening window
+- Check logs for `[AUTO] Mood changed to: [name]`
+
+### Nevil Not Speaking Much
+- Check current mood's speech frequency (zippy=65%, sleepy=15%)
+- Sleepy/brooding moods are naturally quiet
+- Try setting mood to playful/zippy for more speech
+
+### Nevil Too Impatient/Patient
+- Listening window varies by mood
+- Zippy = 5.8s (very impatient)
+- Lonely = 16.7s (very patient)
+- Choose mood based on desired interaction timing
+
+### Movement Stopped Working
+- Check gesture speed system is working: `python3 -m py_compile nodes/navigation/extended_gestures.py`
+- Verify microphone mutex not blocking: check logs for `[AUTO] Microphone unavailable`
+- Ensure navigation thread is running: look for `[AUTO] Running autonomous behavior cycle`
 
 ## File Locations
 
 - **Module**: `/home/dan/Nevil-picar-v3/nodes/navigation/automatic.py`
-- **Integration**: `/home/dan/Nevil-picar-v3/nodes/navigation/navigation_node.py`
+- **Navigation Integration**: `/home/dan/Nevil-picar-v3/nodes/navigation/navigation_node.py` (lines 703-760)
+- **Microphone Mutex**: `/home/dan/Nevil-picar-v3/nevil_framework/microphone_mutex.py`
+- **Gesture Library**: `/home/dan/Nevil-picar-v3/nodes/navigation/extended_gestures.py` (106 gestures)
+- **System Prompt**: `/home/dan/Nevil-picar-v3/nodes/ai_cognition/.messages` (line 231)
 - **Documentation**: `/home/dan/Nevil-picar-v3/nodes/navigation/AUTOMATIC_DOCUMENTATION.md`
+
+## Version History
+
+### v3.0 (Current) - GPT-Driven Rewrite
+- **Complete rewrite**: 100% GPT-driven, no hardcoded behaviors
+- **Removed**: All 11 behavior functions, vocalizations dictionary (~350 lines)
+- **Added**: Mood-based listening windows (5.8s - 16.7s range)
+- **Added**: 3-speed gesture system (:slow/:med/:fast)
+- **Added**: Microphone mutex for parallel speech/movement
+- **Added**: High vision integration (70%/35%)
+- **Improved**: Mood persistence (15-30 cycles vs every cycle)
+- **Enhanced**: System prompt with detailed mood behavioral guidelines
+
+### v2.0 - Behavior System
+- Hardcoded behavior patterns (explore, rest, sleep, etc.)
+- Pre-scripted vocalizations
+- 25% GPT / 75% behavior split
+- Frequent mood changes
+
+### v1.0 - Initial Implementation
+- Basic autonomous loop
+- Simple action sequences

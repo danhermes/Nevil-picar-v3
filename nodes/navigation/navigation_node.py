@@ -121,6 +121,12 @@ class NavigationNode(NevilNode):
         self.auto_thread = None
         self.shutdown_event = threading.Event()
 
+        # Autonomous mode GPT response handling
+        self.auto_response_queue = queue.Queue(maxsize=1)
+        self.auto_conversation_id = None
+        self.auto_pending_response = {}  # Store text_response and robot_action until both received
+        self.auto_response_lock = threading.Lock()
+
     def initialize(self):
         """Initialize navigation and hardware"""
         print(f"[NAVIGATION DEBUG] initialize() called - logger available: {hasattr(self, 'logger')}")
@@ -194,12 +200,63 @@ class NavigationNode(NevilNode):
                 })
 
             def call_GPT(self, prompt, use_image=False):
-                """Call GPT for auto mode responses"""
-                # For now, return a simple response
-                # In full implementation, this would call the AI cognition node
-                actions = []
-                message = "Hmm, interesting!"
-                return actions, message
+                """Call GPT for auto mode responses via AI cognition node"""
+                try:
+                    self.nav.logger.info(f"[AUTO GPT] Calling AI with prompt (vision={use_image}): {prompt[:100]}")
+
+                    # Generate a unique conversation ID for this autonomous request
+                    import uuid
+                    conversation_id = f"auto_{uuid.uuid4().hex[:8]}"
+                    self.nav.auto_conversation_id = conversation_id
+
+                    # Clear any old response in queue
+                    while not self.nav.auto_response_queue.empty():
+                        try:
+                            self.nav.auto_response_queue.get_nowait()
+                        except queue.Empty:
+                            break
+
+                    # Request snapshot if vision is needed
+                    if use_image:
+                        self.nav.logger.info(f"[AUTO GPT] Requesting camera snapshot for vision")
+                        snap_data = {
+                            "requested_by": "autonomous_mode",
+                            "timestamp": time.time()
+                        }
+                        self.nav.publish("snap_pic", snap_data)
+                        # Brief delay to allow camera capture
+                        time.sleep(0.3)
+
+                    # Publish voice_command message to trigger AI cognition
+                    voice_command_data = {
+                        "text": prompt,
+                        "confidence": 1.0,  # Autonomous mode has perfect confidence
+                        "timestamp": time.time(),
+                        "conversation_id": conversation_id
+                    }
+
+                    if not self.nav.publish("voice_command", voice_command_data):
+                        self.nav.logger.error("[AUTO GPT] Failed to publish voice_command")
+                        return [], ""
+
+                    # Wait for response from AI cognition (via on_robot_action callback)
+                    # Timeout after 10 seconds
+                    try:
+                        response = self.nav.auto_response_queue.get(timeout=10.0)
+                        actions = response.get('actions', [])
+                        answer = response.get('answer', '')
+                        self.nav.logger.info(f"[AUTO GPT] Got response: actions={actions}, answer='{answer}'")
+                        return actions, answer
+
+                    except queue.Empty:
+                        self.nav.logger.warning("[AUTO GPT] Timeout waiting for AI response")
+                        return [], ""
+
+                except Exception as e:
+                    self.nav.logger.error(f"[AUTO GPT] Error calling GPT: {e}")
+                    import traceback
+                    self.nav.logger.error(f"[AUTO GPT] Traceback: {traceback.format_exc()}")
+                    return [], ""
 
             def parse_action(self, action_str):
                 """Parse action string"""
@@ -511,6 +568,34 @@ class NavigationNode(NevilNode):
             import traceback
             self.logger.debug(f"❌ [EXEC] Full traceback: {traceback.format_exc()}")
 
+    def on_text_response(self, message):
+        """Handle text response messages from AI cognition (for autonomous mode)"""
+        try:
+            conversation_id = message.data.get('conversation_id', '')
+            text = message.data.get('text', '')
+
+            # Check if this is for autonomous mode
+            if conversation_id and conversation_id == self.auto_conversation_id:
+                self.logger.info(f"[AUTO GPT] Received text_response for autonomous mode: '{text}'")
+
+                with self.auto_response_lock:
+                    # Store the text response
+                    if conversation_id not in self.auto_pending_response:
+                        self.auto_pending_response[conversation_id] = {}
+                    self.auto_pending_response[conversation_id]['answer'] = text
+
+                    # Check if we have both text and actions
+                    if 'actions' in self.auto_pending_response[conversation_id]:
+                        # We have complete response, send it to queue
+                        complete_response = self.auto_pending_response[conversation_id]
+                        self.logger.info(f"[AUTO GPT] Complete response ready: {complete_response}")
+                        self.auto_response_queue.put(complete_response)
+                        # Clean up
+                        del self.auto_pending_response[conversation_id]
+
+        except Exception as e:
+            self.logger.error(f"Error handling text response: {e}")
+
     def on_robot_action(self, message):
         """Handle robot action messages from AI cognition"""
         self.logger.info(f"📨 [MESSAGE] RECEIVED robot action message")
@@ -550,10 +635,49 @@ class NavigationNode(NevilNode):
             actions = data.get('actions', [])
             priority = data.get('priority', 100)
             source_text = data.get('source_text', '')
+            conversation_id = data.get('conversation_id', '')
 
             self.logger.info(f"📨 [MESSAGE] Extracted actions: {actions}")
             self.logger.info(f"📨 [MESSAGE] Priority: {priority}")
             self.logger.info(f"📨 [MESSAGE] Source text: '{source_text}'")
+
+            # Check if this is for autonomous mode
+            if conversation_id and conversation_id == self.auto_conversation_id:
+                self.logger.info(f"[AUTO GPT] Received robot_action for autonomous mode")
+
+                with self.auto_response_lock:
+                    # Store the actions
+                    if conversation_id not in self.auto_pending_response:
+                        self.auto_pending_response[conversation_id] = {}
+                    self.auto_pending_response[conversation_id]['actions'] = actions
+
+                    # Check if we have both text and actions
+                    if 'answer' in self.auto_pending_response[conversation_id]:
+                        # We have complete response, send it to queue
+                        complete_response = self.auto_pending_response[conversation_id]
+                        self.logger.info(f"[AUTO GPT] Complete response ready: {complete_response}")
+                        self.auto_response_queue.put(complete_response)
+                        # Clean up
+                        del self.auto_pending_response[conversation_id]
+                    else:
+                        # No text_response yet - wait briefly for it
+                        # If it doesn't arrive, assume empty answer (silence)
+                        import threading
+                        def check_for_text_response():
+                            time.sleep(0.5)  # Wait 500ms for text_response
+                            with self.auto_response_lock:
+                                if conversation_id in self.auto_pending_response and 'answer' not in self.auto_pending_response[conversation_id]:
+                                    # Still no answer after waiting - assume silent response
+                                    self.logger.info(f"[AUTO GPT] No text_response received - assuming silent response")
+                                    self.auto_pending_response[conversation_id]['answer'] = ''
+                                    complete_response = self.auto_pending_response[conversation_id]
+                                    self.auto_response_queue.put(complete_response)
+                                    del self.auto_pending_response[conversation_id]
+
+                        threading.Thread(target=check_for_text_response, daemon=True).start()
+
+                # For autonomous mode, don't queue the actions here - they'll be handled by automatic.py
+                return
 
             if not actions:
                 self.logger.warning(f"📨 [MESSAGE] No actions in robot_action message - data: {data}")
@@ -735,23 +859,49 @@ class NavigationNode(NevilNode):
                             time.sleep(0.5)
                         self.logger.info("[AUTO] Actions completed, ready for next cycle")
 
+                # Mood-based listening window duration
+                # Higher sociability = longer window (wants interaction)
+                # Lower energy = longer window (patient, not rushing)
+                # Higher energy = shorter window (impatient, wants to keep moving)
+                mood = self.automatic.current_mood
+                sociability = mood.get('sociability', 50)
+                energy = mood.get('energy', 50)
+
+                # Calculate listening window: 5-20 seconds (FULL 15s range)
+                # Normalize actual mood values (60-95 energy, 10-90 soc) to 5-20s range
+                # Use weighted formula that maps our actual mood ranges to desired output
+                # Formula: ((sociability - 10) * 0.1875) + (((100-energy) - 5) * 0.1875) + 5
+                # This maps: low end (soc:10, nrg:95) = 0 + 0 + 5 = 5s
+                #            high end (soc:90, nrg:10) = 15 + 16.875 + 5 = ~37s → clamped to 20s
+                # Actual examples:
+                #   zippy (soc:60, nrg:95) = (50*0.1875) + (0*0.1875) + 5 = 9.375 + 0 + 5 = 14.4s
+                #   Let's use simpler: map normalized (soc + (100-nrg)) to 5-20 range
+                #   Range of (soc + inverted_nrg): zippy (60+5)=65, lonely (80+50)=130
+                #   Map 65-130 to 5-20: duration = 5 + ((value - 65) / (130-65)) * 15
+                combined = sociability + (100 - energy)
+                # Normalize combined score (ranges from ~65 for zippy to ~140 for low-energy moods)
+                # Map 60-150 to 5-20s
+                listen_duration = 5.0 + ((combined - 60.0) / 90.0) * 15.0
+                listen_duration = max(5.0, min(20.0, listen_duration))  # Clamp to 5-20 range
+
+                self.logger.info(f"[AUTO] 👂 Listening window: {listen_duration:.1f}s (sociability:{sociability}, energy:{energy})")
+
                 # Signal listening window with head gesture
                 if self.auto_enabled and self.car:
-                    self.logger.info("[AUTO] 👂 Listening window - signaling with head gesture")
                     # Tilt head way back and look right
                     #self.car.set_cam_tilt_angle(30)  # Tilt way back
                     #self.car.set_cam_pan_angle(30)   # Look right
                     time.sleep(0.3)  # Hold pose briefly
 
-                    # Speech recognition window
-                    time.sleep(2.0)  # 2 second window for speech commands
+                    # Speech recognition window (mood-dependent)
+                    time.sleep(listen_duration)
 
                     # Return to center position
                     #self.car.set_cam_pan_angle(0)    # Center
                     #self.car.set_cam_tilt_angle(10)  # Normal tilt
                 else:
                     # Just the delay if no hardware
-                    time.sleep(2.0)
+                    time.sleep(listen_duration)
 
             except Exception as e:
                 self.logger.error(f"[AUTO] Error in auto loop: {e}")

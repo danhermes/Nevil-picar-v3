@@ -93,6 +93,44 @@ publishes:
         description: "Request priority"
         default: 50
 
+  - topic: "voice_command"
+    message_type: "VoiceCommand"
+    description: "Voice commands sent to AI cognition from autonomous mode"
+    frequency: "on_demand"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Command text to process"
+      confidence:
+        type: "float"
+        required: true
+        description: "Recognition confidence (1.0 for autonomous mode)"
+        min: 0.0
+        max: 1.0
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+      conversation_id:
+        type: "string"
+        required: false
+        description: "Conversation identifier for response correlation"
+
+  - topic: "snap_pic"
+    message_type: "SnapPicRequest"
+    description: "Camera snapshot requests from autonomous mode"
+    frequency: "on_demand"
+    schema:
+      requested_by:
+        type: "string"
+        required: true
+        description: "Node requesting the snapshot"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
 # Topics this node subscribes to
 subscribes:
   - topic: "robot_action"
@@ -162,6 +200,24 @@ subscribes:
         type: "float"
         required: true
         description: "Unix timestamp when command was detected"
+
+  - topic: "text_response"
+    message_type: "TextResponse"
+    callback: "on_text_response"
+    description: "AI-generated text responses for autonomous mode correlation"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Response text from AI"
+      conversation_id:
+        type: "string"
+        required: false
+        description: "Conversation context identifier"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
 
 # Node configuration
 configuration:
