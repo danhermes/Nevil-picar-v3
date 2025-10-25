@@ -347,6 +347,14 @@ class NavigationNode(NevilNode):
         self.logger.debug(f"🔍 [PARSE] Action functions keys (first 10): {list(self.action_functions.keys())[:10]}")
 
         try:
+            # First, check for speed modifier (e.g., "happy_spin:fast" or "ponder:slow")
+            gesture_speed = 'med'  # default
+            if ':' in action_str:
+                action_str, speed_part = action_str.rsplit(':', 1)
+                if speed_part.strip() in ['slow', 'med', 'fast']:
+                    gesture_speed = speed_part.strip()
+                    self.logger.debug(f"🔍 [PARSE] Detected speed modifier: {gesture_speed}")
+
             parts = action_str.split()
             self.logger.debug(f"🔍 [PARSE] Split into parts: {parts}")
 
@@ -399,8 +407,8 @@ class NavigationNode(NevilNode):
                 function = self.action_functions[action_name]
                 result = {
                     'function': function,
-                    'params': {},
-                    'name': action_name
+                    'params': {'speed': gesture_speed},
+                    'name': f"{action_name}:{gesture_speed}" if gesture_speed != 'med' else action_name
                 }
                 self.logger.info(f"✅ [PARSE] Simple action parsed: {result['name']}")
                 return result
@@ -418,8 +426,8 @@ class NavigationNode(NevilNode):
                     function = self.action_functions[full_action]
                     result = {
                         'function': function,
-                        'params': {},
-                        'name': full_action
+                        'params': {'speed': gesture_speed},
+                        'name': f"{full_action}:{gesture_speed}" if gesture_speed != 'med' else full_action
                     }
                     self.logger.info(f"✅ [PARSE] Compound action parsed: {result['name']}")
                     return result
@@ -433,8 +441,8 @@ class NavigationNode(NevilNode):
                     function = self.action_functions[underscore_to_space]
                     result = {
                         'function': function,
-                        'params': {},
-                        'name': underscore_to_space
+                        'params': {'speed': gesture_speed},
+                        'name': f"{underscore_to_space}:{gesture_speed}" if gesture_speed != 'med' else underscore_to_space
                     }
                     self.logger.info(f"✅ [PARSE] Underscore action parsed: {result['name']}")
                     return result
@@ -478,7 +486,18 @@ class NavigationNode(NevilNode):
 
             if params:
                 self.logger.debug(f"🚗 [HARDWARE] Calling with params: func(car, **{params})")
-                func(self.car, **params)
+                # Check if function accepts speed parameter
+                import inspect
+                sig = inspect.signature(func)
+                if 'speed' in params and 'speed' not in sig.parameters:
+                    # Function doesn't accept speed, remove it from params
+                    self.logger.debug(f"🚗 [HARDWARE] Function doesn't accept 'speed' parameter, removing it")
+                    params = {k: v for k, v in params.items() if k != 'speed'}
+
+                if params:
+                    func(self.car, **params)
+                else:
+                    func(self.car)
             else:
                 self.logger.debug(f"🚗 [HARDWARE] Calling without params: func(car)")
                 func(self.car)
