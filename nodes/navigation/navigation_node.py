@@ -603,6 +603,9 @@ class NavigationNode(NevilNode):
         # Check for auto mode triggers in source text
         source_text = message.data.get('source_text', '').lower()
 
+        # DEBUG: Log what we're checking
+        self.logger.info(f"🔍 [AUTO CHECK] Checking source_text for triggers: '{source_text}'")
+
         # Auto mode triggers
         auto_triggers = ['start auto', 'go play', 'seeya nevil', 'see ya nevil',
                         'auto mode', 'automatic mode', 'go have fun', 'go explore',

@@ -1,0 +1,4920 @@
+
+# Extended gesture library for PiCar-X expressive choreography.
+# Safe ranges are respected by construction. All moves use low speeds (3..15) and short pulses.
+# Import time in case caller module doesn't import it.
+import time
+from enum import Enum
+
+# GESTURE SPEED SYSTEM
+# Speed affects pause durations throughout gestures for expressive variation
+class GestureSpeed(Enum):
+    """Enum for gesture speed control"""
+    SLOW = 4.0  # Languid, thoughtful, melancholic, brooding (4x pauses - was 2x)
+    MED = 2.5   # Normal, default (2.5x pauses - was 1x)
+    FAST = 1.5  # Zippy, excited, playful, nervous (1.5x pauses - was 0.5x)
+
+# Legacy string mapping for backward compatibility
+SPEED_MULTIPLIERS = {
+    'slow': GestureSpeed.SLOW.value,
+    'med': GestureSpeed.MED.value,
+    'fast': GestureSpeed.FAST.value,
+    GestureSpeed.SLOW: GestureSpeed.SLOW.value,
+    GestureSpeed.MED: GestureSpeed.MED.value,
+    GestureSpeed.FAST: GestureSpeed.FAST.value
+}
+
+def _sleep(duration, speed='med'):
+    """Sleep with speed multiplier applied - accepts string or GestureSpeed enum"""
+    if isinstance(speed, GestureSpeed):
+        multiplier = speed.value
+    elif isinstance(speed, str):
+        multiplier = SPEED_MULTIPLIERS.get(speed, 1.0)
+    else:
+        multiplier = 1.0
+    time.sleep(duration * multiplier)
+
+# Nevil Extended Gesture Summary
+# (Short descriptions of what each method does — emotional tone + physical motion)
+
+# look_left_then_right – Slow scanning of surroundings with head pan sweep.
+# look_up_then_down – Checks overhead, then bows thoughtfully.
+# look_up – Tilts camera up for better view.
+# inspect_floor – Moves slightly forward and looks down inquisitively.
+# look_around_nervously – Quick head pans and wheel twitches suggesting anxiety.
+# circle_dance – Spins gently in a circle while turning the head.
+# curious_peek – Leans forward, peeks, then returns upright.
+# reverse_peek – Rolls backward while tilting sideways as if spying.
+# head_spin_survey – Wide, slow panoramic head scan.
+# wiggle_and_wait – Restless small servo wiggle while idling.
+# bump_check – Rolls forward an inch, halts, reverses slightly.
+# recoil_surprise – Jerks backward suddenly, eyes up.
+# approach_gently – Quiet glide forward, soft pan corrections.
+# bow_respectfully – Double forward nod of courtesy.
+# bow_apologetically – Deeper, slower bow of remorse.
+# wave_head_no – Broad pan oscillation side-to-side.
+# wave_head_yes – Slow, firm nodding motion.
+# happy_spin – Cheerful 360° twirl.
+# sad_turnaway – Backs away, tilts down, averts gaze.
+# eager_start – Short rev forward with quick nods.
+# show_off – Little forward wiggle and flourish.
+# intro_pose – Leans forward proudly, centers gaze.
+# end_pose – Returns to center, composed finish.
+# confused_tilt – Alternating head tilts left and right.
+# alert_scan – Wide, fast scan with micro-turns.
+# sleep_mode – Tilts down, shuts movement.
+# wake_up – Reverse of sleep_mode with small shake.
+# yawn – Opens up (tilt up) then drops (tilt down).
+# stretch – Extends forward slightly with upward gaze.
+# look_proud – Tilts up, holds steady.
+# sigh – Droops head slowly, rests.
+# twitchy_nervous – Rapid small shifts and back steps.
+# angry_shake – Hard pan shakes, wheels stomp.
+# playful_bounce – Short forward-back wiggles.
+# backflip_attempt – Sudden rear jerk with tilt up.
+# spin_celebrate – Spins then bows jubilantly.
+# spin_reverse – Counterspin variant with flair.
+# quick_look_left – Snap pan left, return.
+# quick_look_right – Snap pan right, return.
+# search_pattern – Sweeps side-to-side while rolling ahead.
+# scout_mode – Moves forward scanning ground.
+# investigate_noise – Turns toward sound, rolls forward.
+# defensive_curl – Retreats, head down protectively.
+# flinch – Quick backward flick and pan away.
+# beckon_forward – Nods and rolls slightly backward invitingly.
+# call_attention – Short spin with a honk cue.
+# show_curiosity – Slow pan/tilt exploration.
+# bashful_hide – Reverses, drops head shyly.
+# peekaboo – Tilt down-up cycle, playful rhythm.
+# dance_happy – Rhythmic left-right turns.
+# dance_sad – Slow, drooping, swaying motion.
+# flirt – Light pan sweeps with teasing wiggle.
+# bored_idle – Barely perceptible movements, long pauses.
+# think_long – Slow pan-tilt spiral, ends in pause.
+# ponder – Gentle alternating tilts, introspective.
+# dreamy_stare – Head up, stillness, faint hum.
+# ponder_and_nod – Ends with soft double nod.
+# approach_slowly – Cautious advance with frequent stops.
+# back_off_slowly – Calm retreat with upward gaze.
+# jump_excited – Quick forward pulses, rapid pans.
+# cheer_wave – Waves and honks enthusiastically.
+# celebrate_big – Spins plus tilt-up finale.
+# applaud_motion – Small left-right hops.
+# ballet_spin – Controlled spin with grace.
+# moonwalk – Smooth reverse rhythmic slide.
+# zigzag – Alternating left-right steering while moving forward.
+# charge_forward – Brief strong surge ahead.
+# retreat_fast – Swift backpedal with pan reversal.
+# patrol_mode – Looped short forward turns.
+# guard_pose – Still stance, head scanning slowly.
+# listen – Slight tilt up, total stillness.
+# listen_close – Leans forward, quiet pause.
+# acknowledge_signal – Nods once, honks.
+# reject_signal – Shakes head, reverses slightly.
+# error_shrug – Down tilt, small pan aside.
+# victory_pose – Tilt up, spin, honk triumphantly.
+# failure_pose – Tilts down, backs off.
+# question_pose – Tilt right, motionless query.
+# affirm_pose – Quick nod confirmation.
+# ready_pose – Centers, primes motors slightly.
+# charge_pose – Motors rev, crouched stance.
+# greet_wave – Friendly wave + tilt.
+# farewell_wave – Reverse wave with back step.
+# hello_friend – Small forward glide and honk.
+# goodbye_friend – Slow down tilt, soft honk.
+# wait_here – Small idle shift, looking aside.
+# come_on_then – Beckons with nods and sound.
+# show_disgust – Sharp pan away and up.
+# show_fear – Reverse and bow low.
+# show_surprise – Sudden up tilt, wide pan.
+# show_joy – Bouncy nod and turn.
+# show_confidence – Steady forward roll, level head.
+# show_shyness – Drops head, edges backward.
+# show_love – Two nods forming heart gesture arc.
+# show_thoughtfulness – Slow oscillation of pan/tilt.
+# idle_breath – Micro head motions, rhythmic.
+# scan_environment – Broad area sweep, gentle rotation.
+# approach_object – Controlled, curious advance.
+# avoid_object – Detects and arcs around.
+# signal_complete – Nod and return to rest.
+# signal_error – Shake head, short back step.
+# present_left – Small left arc showing side.
+# present_right – Small right arc showing side.
+# crescent_arc_left – Curving leftward glide.
+# crescent_arc_right – Mirror of above.
+# figure_eight – Executes small 8-shaped motion pattern.
+
+
+# Helper: optional nudge forward/back small distances via raw motor speeds.
+def _pulse(car, speed, dur, gesture_speed='med'):
+    car.set_motor_speed(1, speed)
+    car.set_motor_speed(2, speed)
+    _sleep(dur, gesture_speed)
+    car.set_motor_speed(1, 0)
+    car.set_motor_speed(2, 0)
+
+def look_left_then_right(car, speed='med'):
+    """HEAD ONLY - Smooth pan sweep from left to right, no wheel movement"""
+    try:
+        # Smooth sweep left
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.4, speed)
+
+        # Pause at left
+        _sleep(0.3, speed)
+
+        # Smooth sweep to right
+        car.set_cam_pan_angle(35, smooth=True)
+        _sleep(0.6, speed)
+
+        # Pause at right
+        _sleep(0.3, speed)
+
+        # Return to center
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.4, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def look_up_then_down(car, speed='med'):
+    """HEAD ONLY - Tilt up then down, no wheel movement"""
+    try:
+        # Tilt up to look at ceiling/sky
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        _sleep(0.5, speed)
+
+        # Pause at top
+        _sleep(0.4, speed)
+
+        # Tilt down to look at floor
+        car.set_cam_tilt_angle(-30, smooth=True)
+        _sleep(0.6, speed)
+
+        # Pause at bottom
+        _sleep(0.4, speed)
+
+        # Return to center
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.4, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def look_up(car, speed='med'):
+    """Look up for better camera view - simplified from look_up_then_down"""
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)  # Positive = UP, Negative = DOWN
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.5, speed)
+        # Don't reset camera - leave it looking up for better view
+    except Exception:
+        try:
+            car.stop()
+        except Exception:
+            pass
+
+def inspect_floor(car, speed='med'):
+    """STATIC - Tilt down and move forward slightly to inspect floor"""
+    try:
+        # Tilt camera down to look at floor
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        _sleep(0.4, speed)
+
+        # Slight forward movement to get closer
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.15, speed)  # Move ~10cm forward
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Hold position and observe
+        _sleep(0.6, speed)
+
+        # Return to center
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def look_around_nervously(car, speed='med'):
+    """HEAD ONLY - Quick pan snaps left-right-left, nervous energy"""
+    try:
+        # Quick snap to right
+        car.set_cam_pan_angle(35, smooth=False)
+        _sleep(0.15, speed)
+
+        # Quick snap to left
+        car.set_cam_pan_angle(-35, smooth=False)
+        _sleep(0.2, speed)
+
+        # Quick snap back to right
+        car.set_cam_pan_angle(30, smooth=False)
+        _sleep(0.15, speed)
+
+        # Quick snap to center
+        car.set_cam_pan_angle(0, smooth=False)
+        _sleep(0.2, speed)
+
+        # Quick snap left again
+        car.set_cam_pan_angle(-25, smooth=False)
+        _sleep(0.15, speed)
+
+        # Return to center
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def circle_dance(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def curious_peek(car, speed='med'):
+    """STATIC+HEAD - Lean forward 10cm, tilt head 20°"""
+    try:
+        # Move forward slightly (lean in)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.13, speed)  # ~10cm forward
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Tilt head to peek
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        _sleep(0.5, speed)
+
+        # Hold peek position
+        _sleep(0.4, speed)
+
+        # Return head to center
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def reverse_peek(car, speed='med'):
+    """STATIC+HEAD - Back 10cm, tilt head sideways"""
+    try:
+        # Move backward (retreat)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.13, speed)  # ~10cm backward
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Tilt head sideways to peek
+        car.set_cam_pan_angle(30, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        _sleep(0.5, speed)
+
+        # Hold peek position
+        _sleep(0.4, speed)
+
+        # Return head to center
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def head_spin_survey(car, speed='med'):
+    """HEAD ONLY - Slow 360° pan rotation"""
+    try:
+        # Start from center
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.2, speed)
+
+        # Slow continuous pan to create 360° effect
+        # Pan left
+        car.set_cam_pan_angle(-50, smooth=True)
+        _sleep(0.6, speed)
+
+        # Continue panning through right
+        car.set_cam_pan_angle(50, smooth=True)
+        _sleep(1.2, speed)  # Slow sweep across
+
+        # Return to center
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.6, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def alert_scan(car, speed='med'):
+    """HEAD ONLY - Fast pan -40° +40° -40°"""
+    try:
+        # Fast snap left
+        car.set_cam_pan_angle(-40, smooth=False)
+        _sleep(0.2, speed)
+
+        # Fast snap right
+        car.set_cam_pan_angle(40, smooth=False)
+        _sleep(0.2, speed)
+
+        # Fast snap left again
+        car.set_cam_pan_angle(-40, smooth=False)
+        _sleep(0.2, speed)
+
+        # Return to center
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def search_pattern(car, speed='med'):
+    """HEAD+SLOW TURN - Pan while slow 90° turn"""
+    try:
+        # Start panning head left
+        car.set_cam_pan_angle(-35, smooth=True)
+        _sleep(0.3, speed)
+
+        # Turn body slowly right while panning head
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.5, speed)  # Slow turn
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Pan head right while body settles
+        car.set_cam_pan_angle(35, smooth=True)
+        _sleep(0.6, speed)
+
+        # Return to center
+        car.set_dir_servo_angle(0, smooth=True)
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def scout_mode(car, speed='med'):
+    """FORWARD+HEAD - Move 20cm forward, scan around"""
+    try:
+        # Look ahead
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        _sleep(0.2, speed)
+
+        # Move forward
+        car.set_motor_speed(1, 20)
+        car.set_motor_speed(2, 20)
+        _sleep(0.22, speed)  # ~20cm forward
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Scan left
+        car.set_cam_pan_angle(-30, smooth=True)
+        _sleep(0.4, speed)
+
+        # Scan right
+        car.set_cam_pan_angle(30, smooth=True)
+        _sleep(0.6, speed)
+
+        # Return to center
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def investigate_noise(car, speed='med'):
+    """HEAD ONLY - Snap turn to one side, hold, listen"""
+    try:
+        # Quick snap to right (investigating sound)
+        car.set_cam_pan_angle(40, smooth=False)
+        car.set_cam_tilt_angle(5, smooth=True)
+        _sleep(0.2, speed)
+
+        # Hold and "listen"
+        _sleep(0.8, speed)
+
+        # Return to center
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def scan_environment(car, speed='med'):
+    """HEAD ONLY - Methodical left-center-right scan"""
+    try:
+        # Scan to left
+        car.set_cam_pan_angle(-35, smooth=True)
+        _sleep(0.5, speed)
+
+        # Hold at left
+        _sleep(0.3, speed)
+
+        # Scan to center
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.4, speed)
+
+        # Hold at center
+        _sleep(0.3, speed)
+
+        # Scan to right
+        car.set_cam_pan_angle(35, smooth=True)
+        _sleep(0.5, speed)
+
+        # Hold at right
+        _sleep(0.3, speed)
+
+        # Return to center
+        car.set_cam_pan_angle(0, smooth=True)
+        _sleep(0.4, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def approach_object(car, speed='med'):
+    """FORWARD - Smooth 15cm forward, look down"""
+    try:
+        # Tilt camera down to watch approach
+        car.set_cam_tilt_angle(-15, smooth=True)
+        _sleep(0.3, speed)
+
+        # Move forward smoothly
+        car.set_motor_speed(1, 18)
+        car.set_motor_speed(2, 18)
+        _sleep(0.18, speed)  # ~15cm forward
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Hold and observe
+        _sleep(0.4, speed)
+
+        # Return camera to center
+        car.set_cam_tilt_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+def avoid_object(car, speed='med'):
+    """BACKWARD - Quick 15cm back, turn 45°"""
+    try:
+        # Quick backward movement
+        car.set_motor_speed(1, -22)
+        car.set_motor_speed(2, -22)
+        _sleep(0.14, speed)  # ~15cm backward
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Turn 45° to avoid
+        car.set_dir_servo_angle(35, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.15, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+
+        # Return steering to center
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.3, speed)
+
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def head_spin_survey(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def wiggle_and_wait(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def bump_check(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def recoil_surprise(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def approach_gently(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def bow_respectfully(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def bow_apologetically(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def wave_head_no(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -8)
+        car.set_motor_speed(2, -8)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def wave_head_yes(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -13)
+        car.set_motor_speed(2, -13)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def happy_spin(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -5)
+        car.set_motor_speed(2, -5)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def sad_turnaway(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def eager_start(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_off(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -7)
+        car.set_motor_speed(2, -7)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def intro_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def end_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def confused_tilt(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def alert_scan(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def sleep_mode(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def wake_up(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def yawn(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def stretch(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -8)
+        car.set_motor_speed(2, -8)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def look_proud(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -13)
+        car.set_motor_speed(2, -13)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def sigh(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -5)
+        car.set_motor_speed(2, -5)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def twitchy_nervous(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def angry_shake(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def playful_bounce(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -7)
+        car.set_motor_speed(2, -7)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def backflip_attempt(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def spin_celebrate(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def spin_reverse(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def quick_look_left(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def quick_look_right(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def search_pattern(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def scout_mode(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def investigate_noise(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -8)
+        car.set_motor_speed(2, -8)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def defensive_curl(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -13)
+        car.set_motor_speed(2, -13)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def flinch(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -5)
+        car.set_motor_speed(2, -5)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def beckon_forward(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def call_attention(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_curiosity(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -7)
+        car.set_motor_speed(2, -7)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def bashful_hide(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def peekaboo(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def dance_happy(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def dance_sad(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def flirt(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def bored_idle(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def think_long(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def ponder(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -8)
+        car.set_motor_speed(2, -8)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def dreamy_stare(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -13)
+        car.set_motor_speed(2, -13)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def ponder_and_nod(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -5)
+        car.set_motor_speed(2, -5)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def approach_slowly(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def back_off_slowly(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def jump_excited(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -7)
+        car.set_motor_speed(2, -7)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def cheer_wave(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def celebrate_big(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def applaud_motion(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def ballet_spin(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def moonwalk(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def zigzag(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def charge_forward(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def retreat_fast(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -8)
+        car.set_motor_speed(2, -8)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def patrol_mode(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -13)
+        car.set_motor_speed(2, -13)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def guard_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -5)
+        car.set_motor_speed(2, -5)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def listen(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def listen_close(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def acknowledge_signal(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -7)
+        car.set_motor_speed(2, -7)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def reject_signal(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def error_shrug(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def victory_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def failure_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def question_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def affirm_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def ready_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def charge_pose(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -8)
+        car.set_motor_speed(2, -8)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def greet_wave(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -13)
+        car.set_motor_speed(2, -13)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def farewell_wave(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -5)
+        car.set_motor_speed(2, -5)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def hello_friend(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def goodbye_friend(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def wait_here(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -7)
+        car.set_motor_speed(2, -7)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def come_on_then(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_disgust(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_fear(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_surprise(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_joy(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_confidence(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_shyness(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_love(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -8)
+        car.set_motor_speed(2, -8)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def show_thoughtfulness(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -13)
+        car.set_motor_speed(2, -13)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def idle_breath(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -5)
+        car.set_motor_speed(2, -5)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def scan_environment(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -10)
+        car.set_motor_speed(2, -10)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def approach_object(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 5)
+        car.set_motor_speed(2, 5)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -15)
+        car.set_motor_speed(2, -15)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 12)
+        car.set_motor_speed(2, 12)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def avoid_object(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -7)
+        car.set_motor_speed(2, -7)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 6)
+        car.set_motor_speed(2, 6)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def signal_complete(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(45, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 11)
+        car.set_motor_speed(2, 11)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -12)
+        car.set_motor_speed(2, -12)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-45, smooth=True)
+        car.set_cam_tilt_angle(15, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def signal_error(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-30, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -4)
+        car.set_motor_speed(2, -4)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(30, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def present_left(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 4)
+        car.set_motor_speed(2, 4)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(-25, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -9)
+        car.set_motor_speed(2, -9)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 14)
+        car.set_motor_speed(2, 14)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def present_right(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(15, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(10, smooth=True)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 7)
+        car.set_motor_speed(2, 7)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(-15, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -14)
+        car.set_motor_speed(2, -14)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-15, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(-10, smooth=True)
+        _sleep(0.29, speed)
+        car.set_motor_speed(1, 8)
+        car.set_motor_speed(2, 8)
+        _sleep(0.16, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def crescent_arc_left(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(35, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(20, smooth=True)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 10)
+        car.set_motor_speed(2, 10)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-30, smooth=True)
+        car.set_cam_tilt_angle(-5, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        _sleep(0.18, speed)
+        car.set_motor_speed(1, -6)
+        car.set_motor_speed(2, -6)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-35, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.33999999999999997, speed)
+        car.set_motor_speed(1, 15)
+        car.set_motor_speed(2, 15)
+        _sleep(0.2, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def crescent_arc_right(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(55, smooth=True)
+        car.set_cam_tilt_angle(-10, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 13)
+        car.set_motor_speed(2, 13)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(10, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, -11)
+        car.set_motor_speed(2, -11)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(-55, smooth=True)
+        car.set_cam_tilt_angle(10, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.39, speed)
+        car.set_motor_speed(1, 9)
+        car.set_motor_speed(2, 9)
+        _sleep(0.24, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+def figure_eight(car, speed='med'):
+    try:
+        car.set_cam_pan_angle(-25, smooth=True)
+        car.set_cam_tilt_angle(-20, smooth=True)
+        car.set_dir_servo_angle(-30, smooth=True)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(40, smooth=True)
+        car.set_cam_tilt_angle(5, smooth=True)
+        car.set_dir_servo_angle(-20, smooth=True)
+        _sleep(0.3, speed)
+        car.set_motor_speed(1, -3)
+        car.set_motor_speed(2, -3)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(25, smooth=True)
+        car.set_cam_tilt_angle(20, smooth=True)
+        car.set_dir_servo_angle(30, smooth=True)
+        _sleep(0.44, speed)
+        car.set_motor_speed(1, 3)
+        car.set_motor_speed(2, 3)
+        _sleep(0.12, speed)
+        car.set_motor_speed(1, 0)
+        car.set_motor_speed(2, 0)
+        car.set_cam_pan_angle(0, smooth=True)
+        car.set_cam_tilt_angle(0, smooth=True)
+        car.set_dir_servo_angle(0, smooth=True)
+        car.stop()
+    except Exception:
+        try:
+            car.stop()
+            car.set_cam_pan_angle(0, smooth=True)
+            car.set_cam_tilt_angle(0, smooth=True)
+            car.set_dir_servo_angle(0, smooth=True)
+        except Exception:
+            pass
+
+
+EXTENDED_GESTURES = {
+    "look_left_then_right": look_left_then_right,
+    "look_up_then_down": look_up_then_down,
+    "look_up": look_up,
+    "inspect_floor": inspect_floor,
+    "look_around_nervously": look_around_nervously,
+    "circle_dance": circle_dance,
+    "curious_peek": curious_peek,
+    "reverse_peek": reverse_peek,
+    "head_spin_survey": head_spin_survey,
+    "wiggle_and_wait": wiggle_and_wait,
+    "bump_check": bump_check,
+    "recoil_surprise": recoil_surprise,
+    "approach_gently": approach_gently,
+    "bow_respectfully": bow_respectfully,
+    "bow_apologetically": bow_apologetically,
+    "wave_head_no": wave_head_no,
+    "wave_head_yes": wave_head_yes,
+    "happy_spin": happy_spin,
+    "sad_turnaway": sad_turnaway,
+    "eager_start": eager_start,
+    "show_off": show_off,
+    "intro_pose": intro_pose,
+    "end_pose": end_pose,
+    "confused_tilt": confused_tilt,
+    "alert_scan": alert_scan,
+    "sleep_mode": sleep_mode,
+    "wake_up": wake_up,
+    "yawn": yawn,
+    "stretch": stretch,
+    "look_proud": look_proud,
+    "sigh": sigh,
+    "twitchy_nervous": twitchy_nervous,
+    "angry_shake": angry_shake,
+    "playful_bounce": playful_bounce,
+    "backflip_attempt": backflip_attempt,
+    "spin_celebrate": spin_celebrate,
+    "spin_reverse": spin_reverse,
+    "quick_look_left": quick_look_left,
+    "quick_look_right": quick_look_right,
+    "search_pattern": search_pattern,
+    "scout_mode": scout_mode,
+    "investigate_noise": investigate_noise,
+    "defensive_curl": defensive_curl,
+    "flinch": flinch,
+    "beckon_forward": beckon_forward,
+    "call_attention": call_attention,
+    "show_curiosity": show_curiosity,
+    "bashful_hide": bashful_hide,
+    "peekaboo": peekaboo,
+    "dance_happy": dance_happy,
+    "dance_sad": dance_sad,
+    "flirt": flirt,
+    "bored_idle": bored_idle,
+    "think_long": think_long,
+    "ponder": ponder,
+    "dreamy_stare": dreamy_stare,
+    "ponder_and_nod": ponder_and_nod,
+    "approach_slowly": approach_slowly,
+    "back_off_slowly": back_off_slowly,
+    "jump_excited": jump_excited,
+    "cheer_wave": cheer_wave,
+    "celebrate_big": celebrate_big,
+    "applaud_motion": applaud_motion,
+    "ballet_spin": ballet_spin,
+    "moonwalk": moonwalk,
+    "zigzag": zigzag,
+    "charge_forward": charge_forward,
+    "retreat_fast": retreat_fast,
+    "patrol_mode": patrol_mode,
+    "guard_pose": guard_pose,
+    "listen": listen,
+    "listen_close": listen_close,
+    "acknowledge_signal": acknowledge_signal,
+    "reject_signal": reject_signal,
+    "error_shrug": error_shrug,
+    "victory_pose": victory_pose,
+    "failure_pose": failure_pose,
+    "question_pose": question_pose,
+    "affirm_pose": affirm_pose,
+    "ready_pose": ready_pose,
+    "charge_pose": charge_pose,
+    "greet_wave": greet_wave,
+    "farewell_wave": farewell_wave,
+    "hello_friend": hello_friend,
+    "goodbye_friend": goodbye_friend,
+    "wait_here": wait_here,
+    "come_on_then": come_on_then,
+    "show_disgust": show_disgust,
+    "show_fear": show_fear,
+    "show_surprise": show_surprise,
+    "show_joy": show_joy,
+    "show_confidence": show_confidence,
+    "show_shyness": show_shyness,
+    "show_love": show_love,
+    "show_thoughtfulness": show_thoughtfulness,
+    "idle_breath": idle_breath,
+    "scan_environment": scan_environment,
+    "approach_object": approach_object,
+    "avoid_object": avoid_object,
+    "signal_complete": signal_complete,
+    "signal_error": signal_error,
+    "present_left": present_left,
+    "present_right": present_right,
+    "crescent_arc_left": crescent_arc_left,
+    "crescent_arc_right": crescent_arc_right,
+    "figure_eight": figure_eight,
+}
+
+
+def register_extended(actions_dict: dict) -> dict:
+    """Update an existing actions_dict with the extended gestures and return it."""
+    actions_dict.update(EXTENDED_GESTURES)
+    return actions_dict

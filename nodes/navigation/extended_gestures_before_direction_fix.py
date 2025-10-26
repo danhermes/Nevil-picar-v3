@@ -136,7 +136,7 @@ def inspect_floor(car, speed='med'):
 
         # Slight forward movement to get closer
         car.set_motor_speed(1, 15)
-        car.set_motor_speed(2, -15)
+        car.set_motor_speed(2, 15)
         _sleep(0.13, speed)  # Move ~10cm forward
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -202,7 +202,7 @@ def curious_peek(car, speed='med'):
     try:
         # Move forward slightly (lean in)
         car.set_motor_speed(1, 15)
-        car.set_motor_speed(2, -15)
+        car.set_motor_speed(2, 15)
         _sleep(0.13, speed)  # ~10cm forward
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -235,7 +235,7 @@ def reverse_peek(car, speed='med'):
     try:
         # Move backward (retreat)
         car.set_motor_speed(1, -15)
-        car.set_motor_speed(2, 15)
+        car.set_motor_speed(2, -15)
         _sleep(0.13, speed)  # ~10cm backward
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -336,7 +336,7 @@ def search_pattern(car, speed='med'):
         car.set_dir_servo_angle(30, smooth=True)
         _sleep(0.2, speed)
         car.set_motor_speed(1, 12)
-        car.set_motor_speed(2, -12)
+        car.set_motor_speed(2, 12)
         _sleep(0.5, speed)  # Slow turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -371,7 +371,7 @@ def scout_mode(car, speed='med'):
 
         # Move forward
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.22, speed)  # ~20cm forward
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -475,7 +475,7 @@ def approach_object(car, speed='med'):
 
         # Move forward smoothly
         car.set_motor_speed(1, 18)
-        car.set_motor_speed(2, -18)
+        car.set_motor_speed(2, 18)
         _sleep(0.18, speed)  # ~15cm forward
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -503,7 +503,7 @@ def avoid_object(car, speed='med'):
     try:
         # Quick backward movement
         car.set_motor_speed(1, -22)
-        car.set_motor_speed(2, 22)
+        car.set_motor_speed(2, -22)
         _sleep(0.14, speed)  # ~15cm backward
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -512,7 +512,7 @@ def avoid_object(car, speed='med'):
         car.set_dir_servo_angle(35, smooth=True)
         _sleep(0.2, speed)
         car.set_motor_speed(1, 15)
-        car.set_motor_speed(2, -15)
+        car.set_motor_speed(2, 15)
         _sleep(0.15, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -545,7 +545,7 @@ def circle_dance(car, speed='med'):
 
         # Spin 360° - differential steering creates rotation
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(1.5, speed)  # Duration for ~360° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -604,7 +604,7 @@ def bump_check(car, speed='med'):
     try:
         # Move forward 5cm
         car.set_motor_speed(1, 18)
-        car.set_motor_speed(2, -18)
+        car.set_motor_speed(2, 18)
         _sleep(0.06, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -614,7 +614,7 @@ def bump_check(car, speed='med'):
 
         # Move back 3cm
         car.set_motor_speed(1, -18)
-        car.set_motor_speed(2, 18)
+        car.set_motor_speed(2, -18)
         _sleep(0.04, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -636,7 +636,7 @@ def approach_gently(car, speed='med'):
     try:
         # Gentle forward motion
         car.set_motor_speed(1, 12)
-        car.set_motor_speed(2, -12)
+        car.set_motor_speed(2, 12)
         _sleep(0.5, speed)  # ~30cm at slow speed
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -662,7 +662,7 @@ def happy_spin(car, speed='med'):
 
         # Fast double spin 720°
         car.set_motor_speed(1, 25)
-        car.set_motor_speed(2, -25)
+        car.set_motor_speed(2, 25)
         _sleep(2.5, speed)  # Duration for ~720° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -687,7 +687,7 @@ def eager_start(car, speed='med'):
     try:
         # Forward bounce
         car.set_motor_speed(1, 22)
-        car.set_motor_speed(2, -22)
+        car.set_motor_speed(2, 22)
         _sleep(0.05, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -695,7 +695,7 @@ def eager_start(car, speed='med'):
 
         # Back bounce
         car.set_motor_speed(1, -20)
-        car.set_motor_speed(2, 20)
+        car.set_motor_speed(2, -20)
         _sleep(0.04, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -703,7 +703,7 @@ def eager_start(car, speed='med'):
 
         # Forward bounce again
         car.set_motor_speed(1, 22)
-        car.set_motor_speed(2, -22)
+        car.set_motor_speed(2, 22)
         _sleep(0.05, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -711,7 +711,7 @@ def eager_start(car, speed='med'):
 
         # Back bounce again
         car.set_motor_speed(1, -20)
-        car.set_motor_speed(2, 20)
+        car.set_motor_speed(2, -20)
         _sleep(0.04, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -735,7 +735,7 @@ def show_off(car, speed='med'):
         car.set_dir_servo_angle(40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 28)
-        car.set_motor_speed(2, -28)
+        car.set_motor_speed(2, 28)
         _sleep(0.75, speed)  # ~180° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -747,7 +747,7 @@ def show_off(car, speed='med'):
         car.set_dir_servo_angle(-40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 28)
-        car.set_motor_speed(2, -28)
+        car.set_motor_speed(2, 28)
         _sleep(0.75, speed)  # ~180° turn back
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -774,7 +774,7 @@ def zigzag(car, speed='med'):
         car.set_dir_servo_angle(-30, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.12, speed)  # ~10cm
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -783,7 +783,7 @@ def zigzag(car, speed='med'):
         car.set_dir_servo_angle(30, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.12, speed)  # ~10cm
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -808,7 +808,7 @@ def charge_forward(car, speed='med'):
     try:
         # Fast forward charge
         car.set_motor_speed(1, 35)
-        car.set_motor_speed(2, -35)
+        car.set_motor_speed(2, 35)
         _sleep(0.25, speed)  # ~40cm at high speed
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -830,7 +830,7 @@ def retreat_fast(car, speed='med'):
     try:
         # Fast backward retreat
         car.set_motor_speed(1, -30)
-        car.set_motor_speed(2, 30)
+        car.set_motor_speed(2, -30)
         _sleep(0.28, speed)  # ~40cm backward
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -852,7 +852,7 @@ def patrol_mode(car, speed='med'):
     try:
         # Forward 20cm
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.22, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -862,7 +862,7 @@ def patrol_mode(car, speed='med'):
         car.set_dir_servo_angle(40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 22)
-        car.set_motor_speed(2, -22)
+        car.set_motor_speed(2, 22)
         _sleep(0.6, speed)  # ~90° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -871,7 +871,7 @@ def patrol_mode(car, speed='med'):
         car.set_dir_servo_angle(0, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.22, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -895,7 +895,7 @@ def moonwalk(car, speed='med'):
         car.set_dir_servo_angle(-20, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, -18)
-        car.set_motor_speed(2, 18)
+        car.set_motor_speed(2, -18)
         _sleep(0.15, speed)
 
         # Sway right while moving backward
@@ -935,7 +935,7 @@ def ballet_spin(car, speed='med'):
 
         # Slow graceful 360° spin
         car.set_motor_speed(1, 15)
-        car.set_motor_speed(2, -15)
+        car.set_motor_speed(2, 15)
         _sleep(2.0, speed)  # Slow elegant rotation
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -962,7 +962,7 @@ def figure_eight(car, speed='med'):
         car.set_dir_servo_angle(-35, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.8, speed)
 
         # Second curve - turn right while moving forward
@@ -995,7 +995,7 @@ def crescent_arc_left(car, speed='med'):
         car.set_dir_servo_angle(-30, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 22)
-        car.set_motor_speed(2, -22)
+        car.set_motor_speed(2, 22)
         _sleep(0.9, speed)  # Wide arc
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1022,7 +1022,7 @@ def crescent_arc_right(car, speed='med'):
         car.set_dir_servo_angle(30, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 22)
-        car.set_motor_speed(2, -22)
+        car.set_motor_speed(2, 22)
         _sleep(0.9, speed)  # Wide arc
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1050,7 +1050,7 @@ def recoil_surprise(car, speed='med'):
     try:
         # Sudden backward jerk
         car.set_motor_speed(1, -35)
-        car.set_motor_speed(2, 35)
+        car.set_motor_speed(2, -35)
         car.set_cam_tilt_angle(30, smooth=False)  # Snap head up simultaneously
         _sleep(0.08, speed)  # Short burst
         car.set_motor_speed(1, 0)
@@ -1079,7 +1079,7 @@ def flinch(car, speed='med'):
     try:
         # Quick flinch backward + head snap left
         car.set_motor_speed(1, -30)
-        car.set_motor_speed(2, 30)
+        car.set_motor_speed(2, -30)
         car.set_cam_pan_angle(-40, smooth=False)
         _sleep(0.04, speed)  # Very short
         car.set_motor_speed(1, 0)
@@ -1177,7 +1177,7 @@ def playful_bounce(car, speed='med'):
         for _ in range(4):
             # Forward bounce
             car.set_motor_speed(1, 25)
-            car.set_motor_speed(2, -25)
+            car.set_motor_speed(2, 25)
             _sleep(0.04, speed)
             car.set_motor_speed(1, 0)
             car.set_motor_speed(2, 0)
@@ -1185,7 +1185,7 @@ def playful_bounce(car, speed='med'):
             
             # Backward bounce
             car.set_motor_speed(1, -25)
-            car.set_motor_speed(2, 25)
+            car.set_motor_speed(2, -25)
             _sleep(0.04, speed)
             car.set_motor_speed(1, 0)
             car.set_motor_speed(2, 0)
@@ -1207,7 +1207,7 @@ def backflip_attempt(car, speed='med'):
     try:
         # Sudden backward burst with head tilt up
         car.set_motor_speed(1, -40)
-        car.set_motor_speed(2, 40)
+        car.set_motor_speed(2, -40)
         car.set_cam_tilt_angle(35, smooth=False)
         _sleep(0.08, speed)
         car.set_motor_speed(1, 0)
@@ -1236,7 +1236,7 @@ def defensive_curl(car, speed='med'):
     try:
         # Retreat backward
         car.set_motor_speed(1, -22)
-        car.set_motor_speed(2, 22)
+        car.set_motor_speed(2, -22)
         car.set_cam_tilt_angle(-25, smooth=True)
         _sleep(0.2, speed)  # ~20cm back
         car.set_motor_speed(1, 0)
@@ -1265,7 +1265,7 @@ def jump_excited(car, speed='med'):
     try:
         for _ in range(6):
             car.set_motor_speed(1, 30)
-            car.set_motor_speed(2, -30)
+            car.set_motor_speed(2, 30)
             _sleep(0.025, speed)  # Very short pulse
             car.set_motor_speed(1, 0)
             car.set_motor_speed(2, 0)
@@ -1332,7 +1332,7 @@ def show_surprise(car, speed='med'):
     try:
         # Sudden backward + head up + pan
         car.set_motor_speed(1, -32)
-        car.set_motor_speed(2, 32)
+        car.set_motor_speed(2, -32)
         car.set_cam_tilt_angle(30, smooth=False)
         car.set_cam_pan_angle(25, smooth=False)
         _sleep(0.06, speed)
@@ -1363,7 +1363,7 @@ def show_fear(car, speed='med'):
     try:
         # Fast backward retreat + head down
         car.set_motor_speed(1, -28)
-        car.set_motor_speed(2, 28)
+        car.set_motor_speed(2, -28)
         car.set_cam_tilt_angle(-30, smooth=True)
         _sleep(0.2, speed)  # ~25cm back
         car.set_motor_speed(1, 0)
@@ -1394,7 +1394,7 @@ def show_disgust(car, speed='med'):
         car.set_cam_pan_angle(-35, smooth=False)
         car.set_cam_tilt_angle(15, smooth=False)
         car.set_motor_speed(1, -18)
-        car.set_motor_speed(2, 18)
+        car.set_motor_speed(2, -18)
         _sleep(0.08, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1545,7 +1545,7 @@ def farewell_wave(car, speed='med'):
     try:
         # Start backing slowly while waving
         car.set_motor_speed(1, -12)
-        car.set_motor_speed(2, 12)
+        car.set_motor_speed(2, -12)
         
         # Wave left
         car.set_cam_pan_angle(-25, smooth=True)
@@ -1581,7 +1581,7 @@ def hello_friend(car, speed='med'):
     try:
         # Slow forward approach
         car.set_motor_speed(1, 12)
-        car.set_motor_speed(2, -12)
+        car.set_motor_speed(2, 12)
         _sleep(0.28, speed)  # ~15cm
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1608,7 +1608,7 @@ def goodbye_friend(car, speed='med'):
     try:
         # Slow backward + head tilt down gradually
         car.set_motor_speed(1, -10)
-        car.set_motor_speed(2, 10)
+        car.set_motor_speed(2, -10)
         car.set_cam_tilt_angle(-25, smooth=True)
         _sleep(0.45, speed)  # ~20cm slow
         car.set_motor_speed(1, 0)
@@ -1637,7 +1637,7 @@ def beckon_forward(car, speed='med'):
     try:
         # Start backing
         car.set_motor_speed(1, -12)
-        car.set_motor_speed(2, 12)
+        car.set_motor_speed(2, -12)
         
         # Continuous nodding motion
         car.set_cam_tilt_angle(-20, smooth=True)
@@ -1690,7 +1690,7 @@ def bashful_hide(car, speed='med'):
     try:
         # Slow retreat + gradual head drop
         car.set_motor_speed(1, -10)
-        car.set_motor_speed(2, 10)
+        car.set_motor_speed(2, -10)
         car.set_cam_tilt_angle(-28, smooth=True)
         car.set_cam_pan_angle(-15, smooth=True)
         _sleep(0.4, speed)  # ~18cm slow retreat
@@ -1788,7 +1788,7 @@ def present_left(car, speed='med'):
         
         # Small forward to show off
         car.set_motor_speed(1, 15)
-        car.set_motor_speed(2, -15)
+        car.set_motor_speed(2, 15)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1822,7 +1822,7 @@ def present_right(car, speed='med'):
         
         # Small forward to show off
         car.set_motor_speed(1, 15)
-        car.set_motor_speed(2, -15)
+        car.set_motor_speed(2, 15)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1858,7 +1858,7 @@ def spin_celebrate(car, speed='med'):
         car.set_dir_servo_angle(40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 28)
-        car.set_motor_speed(2, -28)
+        car.set_motor_speed(2, 28)
         _sleep(1.3, speed)  # ~360° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1890,7 +1890,7 @@ def spin_reverse(car, speed='med'):
         car.set_dir_servo_angle(-40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 28)
-        car.set_motor_speed(2, -28)
+        car.set_motor_speed(2, 28)
         _sleep(1.3, speed)  # ~360° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1916,7 +1916,7 @@ def cheer_wave(car, speed='med'):
         # Fast wave left
         car.set_cam_pan_angle(-35, smooth=False)
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.08, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1925,7 +1925,7 @@ def cheer_wave(car, speed='med'):
         # Fast wave right
         car.set_cam_pan_angle(35, smooth=False)
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.08, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1934,7 +1934,7 @@ def cheer_wave(car, speed='med'):
         # Fast wave left
         car.set_cam_pan_angle(-35, smooth=False)
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.08, speed)
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -1961,7 +1961,7 @@ def celebrate_big(car, speed='med'):
         car.set_dir_servo_angle(40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 30)
-        car.set_motor_speed(2, -30)
+        car.set_motor_speed(2, 30)
         car.set_cam_tilt_angle(25, smooth=True)
         _sleep(2.5, speed)  # ~720° double spin
         car.set_motor_speed(1, 0)
@@ -2033,7 +2033,7 @@ def victory_pose(car, speed='med'):
         
         # Victory roll forward
         car.set_motor_speed(1, 22)
-        car.set_motor_speed(2, -22)
+        car.set_motor_speed(2, 22)
         _sleep(0.1, speed)  # ~10cm
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -2072,7 +2072,7 @@ def show_joy(car, speed='med'):
         car.set_dir_servo_angle(40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 25)
-        car.set_motor_speed(2, -25)
+        car.set_motor_speed(2, 25)
         _sleep(0.7, speed)  # ~180° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -2102,7 +2102,7 @@ def sad_turnaway(car, speed='med'):
     try:
         # Very slow backward retreat + continuous head drop
         car.set_motor_speed(1, -8)
-        car.set_motor_speed(2, 8)
+        car.set_motor_speed(2, -8)
         car.set_cam_tilt_angle(-30, smooth=True)
         car.set_cam_pan_angle(-20, smooth=True)
         _sleep(0.55, speed)  # ~20cm very slow
@@ -2240,7 +2240,7 @@ def stretch(car, speed='med'):
     try:
         # Slow forward stretch
         car.set_motor_speed(1, 8)
-        car.set_motor_speed(2, -8)
+        car.set_motor_speed(2, 8)
         car.set_cam_tilt_angle(25, smooth=True)
         _sleep(0.42, speed)  # ~15cm very slow
         car.set_motor_speed(1, 0)
@@ -2413,7 +2413,7 @@ def approach_slowly(car, speed='med'):
     try:
         # Very slow forward
         car.set_motor_speed(1, 8)
-        car.set_motor_speed(2, -8)
+        car.set_motor_speed(2, 8)
         _sleep(0.7, speed)  # ~25cm very slow
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -2435,7 +2435,7 @@ def back_off_slowly(car, speed='med'):
     try:
         # Very slow backward
         car.set_motor_speed(1, -8)
-        car.set_motor_speed(2, 8)
+        car.set_motor_speed(2, -8)
         car.set_cam_tilt_angle(15, smooth=True)
         _sleep(0.7, speed)  # ~25cm very slow
         car.set_motor_speed(1, 0)
@@ -2630,7 +2630,7 @@ def listen_close(car, speed='med'):
     try:
         # Lean in closer
         car.set_motor_speed(1, 12)
-        car.set_motor_speed(2, -12)
+        car.set_motor_speed(2, 12)
         car.set_cam_tilt_angle(8, smooth=True)
         _sleep(0.15, speed)  # ~8cm
         car.set_motor_speed(1, 0)
@@ -2702,7 +2702,7 @@ def failure_pose(car, speed='med'):
     try:
         # Defeated head drop + slow retreat
         car.set_motor_speed(1, -10)
-        car.set_motor_speed(2, 10)
+        car.set_motor_speed(2, -10)
         car.set_cam_tilt_angle(-35, smooth=True)
         _sleep(0.35, speed)  # ~15cm slow retreat
         car.set_motor_speed(1, 0)
@@ -2797,7 +2797,7 @@ def show_shyness(car, speed='med'):
     try:
         # Shy retreat
         car.set_motor_speed(1, -10)
-        car.set_motor_speed(2, 10)
+        car.set_motor_speed(2, -10)
         car.set_cam_tilt_angle(-25, smooth=True)
         car.set_cam_pan_angle(-12, smooth=True)
         _sleep(0.28, speed)  # ~12cm slow
@@ -2889,7 +2889,7 @@ def call_attention(car, speed='med'):
         car.set_dir_servo_angle(40, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 25)
-        car.set_motor_speed(2, -25)
+        car.set_motor_speed(2, 25)
         _sleep(0.55, speed)  # ~90° turn
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -2969,7 +2969,7 @@ def reject_signal(car, speed='med'):
         # Rejection shake
         car.set_cam_pan_angle(-30, smooth=False)
         car.set_motor_speed(1, -15)
-        car.set_motor_speed(2, 15)
+        car.set_motor_speed(2, -15)
         _sleep(0.12, speed)
         
         car.set_cam_pan_angle(30, smooth=False)
@@ -3055,7 +3055,7 @@ def signal_error(car, speed='med'):
         
         # Short backward step
         car.set_motor_speed(1, -15)
-        car.set_motor_speed(2, 15)
+        car.set_motor_speed(2, -15)
         _sleep(0.08, speed)  # ~5cm back
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -3081,7 +3081,7 @@ def show_confidence(car, speed='med'):
         _sleep(0.2, speed)
         
         car.set_motor_speed(1, 20)
-        car.set_motor_speed(2, -20)
+        car.set_motor_speed(2, 20)
         _sleep(0.22, speed)  # ~20cm steady
         car.set_motor_speed(1, 0)
         car.set_motor_speed(2, 0)
@@ -3117,7 +3117,7 @@ def dance_happy(car, speed='med'):
         car.set_dir_servo_angle(-30, smooth=True)
         _sleep(0.1, speed)
         car.set_motor_speed(1, 18)
-        car.set_motor_speed(2, -18)
+        car.set_motor_speed(2, 18)
         _sleep(0.3, speed)
         
         # Straight
@@ -3188,7 +3188,7 @@ def come_on_then(car, speed='med'):
     try:
         # Start backing
         car.set_motor_speed(1, -12)
-        car.set_motor_speed(2, 12)
+        car.set_motor_speed(2, -12)
         
         # Continuous beckoning nods
         car.set_cam_tilt_angle(-18, smooth=True)

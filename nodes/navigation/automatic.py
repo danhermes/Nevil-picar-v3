@@ -107,7 +107,8 @@ class Automatic:
     }
 
     def __init__(self, nevil_self):
-        self.current_mood_name = "curious"  # Default mood
+        # Randomize initial mood instead of always starting as "curious"
+        self.current_mood_name = random.choice(list(self.MOOD_PROFILES.keys()))
         self.current_mood = self.MOOD_PROFILES[self.current_mood_name]
         self.nevil = nevil_self  # Store the nevil reference
         self.last_interaction_time = 0  # Track when we last had an interaction
@@ -116,7 +117,13 @@ class Automatic:
         self.cycles_since_mood_change = 0
         self.mood_change_threshold = random.randint(15, 30)  # Change every 15-30 cycles
 
+        # Speed control - global slowdown factor for auto mode
+        # Increase this to make Nevil slower overall (2.0 = 2x slower, 3.0 = 3x slower)
+        self.auto_speed_slowdown = 2.5  # Default 2.5x slower than normal
+
         print(f"[AUTOMATIC] Initialized with mood: {self.current_mood_name}")
+        print(f"[AUTOMATIC] Speed slowdown factor: {self.auto_speed_slowdown}x")
+        print(f"[AUTOMATIC] Listening windows: mood-based (5-20s depending on energy/sociability)")
         print(f"[AUTOMATIC] Next mood change in ~{self.mood_change_threshold} cycles")
 
     def run_idle_loop(self, cycles=1):
@@ -168,8 +175,9 @@ class Automatic:
                 break
 
             # Handle speech output (if GPT decided to speak)
+            # Note: Speech is automatically handled via text_response message from AI cognition
+            # No need to call handle_TTS_generation() here as it would duplicate the request
             if message:
-                self.nevil.handle_TTS_generation(message)
                 print(f"[AUTOMATIC MODE] 💬 Speaking: \"{message}\"")
             else:
                 print(f"[AUTOMATIC MODE] 🤫 Silent cycle")
@@ -192,6 +200,31 @@ class Automatic:
                     if not self.nevil.speech_loaded:
                         break
                 time.sleep(.01)
+
+            # Pause between cycles - mood-based duration
+            # This creates breathing room and makes auto mode less manic
+            # Speech recognition runs in background and will detect "stop auto" anytime
+            energy = self.current_mood.get('energy', 50)
+            sociability = self.current_mood.get('sociability', 50)
+
+            # Use the original carefully-calculated pause duration formula
+            # Low energy + high sociability = longer pauses
+            combined = sociability + (100 - energy)
+            pause_duration = 5.0 + ((combined - 60.0) / 90.0) * 15.0
+            pause_duration = max(5.0, min(20.0, pause_duration))  # Clamp to 5-20 range
+
+            print(f"[AUTOMATIC MODE] 💤 Pausing {pause_duration:.1f}s before next cycle...")
+            print(f"[AUTOMATIC MODE]    Commands (say anytime):")
+            print(f"[AUTOMATIC MODE]      Exit: 'stop auto', 'come back', 'stop playing', 'manual mode'")
+            print(f"[AUTOMATIC MODE]      Mood: 'set mood playful/curious/sleepy/zippy/lonely/mischievous/brooding/melancholic'")
+
+            # Simple pause - no listening gesture, no conversation
+            # Just wait before the next autonomous cycle
+            start_pause = time.time()
+            while (time.time() - start_pause) < pause_duration:
+                if not self.nevil.auto_enabled:
+                    break
+                time.sleep(0.1)
 
     def should_use_vision(self):
         """
@@ -224,14 +257,20 @@ class Automatic:
         Simple prompt that references mood and guidelines in system prompt.
         No hardcoded examples or suggestions - let GPT decide based on mood.
         """
-        prompt = f"You are in autonomous mode with mood '{self.current_mood_name}'. "
-        prompt += "Respond according to your mood behavioral guidelines. "
-        prompt += "Remember: speech is optional, silence and pauses are valid responses. "
+        speech_freq = self.current_mood.get('speech_freq', 0.50)
+        speech_pct = int(speech_freq * 100)
+
+        prompt = f"You are in autonomous mode with mood '{self.current_mood_name}' (talk {speech_pct}% of time). "
+        # Encourage stillness and minimal movement
+        prompt += "Stillness is good. Movement is optional - only move if you really want to. "
+        prompt += "Empty actions [] or just 1-2 small gestures are perfectly fine. "
+        # Add gentle speed guidance - prefer slow/med over fast
+        prompt += "When you do move, use thoughtful, deliberate speeds (:slow or :med preferred). "
 
         if use_vision:
-            prompt += "You can see your environment - respond to what you observe."
+            prompt += "You can see your environment - comment on what you observe or stay silent and still. "
         else:
-            prompt += "What's on your mind?"
+            prompt += "What's on your mind? You can just think quietly with minimal or no movement. "
 
         return prompt
 
