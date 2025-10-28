@@ -3215,3 +3215,135 @@ def come_on_then(car, speed='med'):
         except Exception:
             pass
 
+
+# Build the EXTENDED_GESTURES dictionary mapping names to functions
+EXTENDED_GESTURES = {
+    # OBSERVATION (15)
+    "look_left_then_right": look_left_then_right,
+    "look_up_then_down": look_up_then_down,
+    "look_up": look_up,
+    "inspect_floor": inspect_floor,
+    "look_around_nervously": look_around_nervously,
+    "curious_peek": curious_peek,
+    "reverse_peek": reverse_peek,
+    "head_spin_survey": head_spin_survey,
+    "alert_scan": alert_scan,
+    "search_pattern": search_pattern,
+    "scout_mode": scout_mode,
+    "investigate_noise": investigate_noise,
+    "scan_environment": scan_environment,
+    "approach_object": approach_object,
+    "avoid_object": avoid_object,
+    
+    # MOVEMENT (16)
+    "circle_dance": circle_dance,
+    "wiggle_and_wait": wiggle_and_wait,
+    "bump_check": bump_check,
+    "approach_gently": approach_gently,
+    "happy_spin": happy_spin,
+    "eager_start": eager_start,
+    "show_off": show_off,
+    "zigzag": zigzag,
+    "charge_forward": charge_forward,
+    "retreat_fast": retreat_fast,
+    "patrol_mode": patrol_mode,
+    "moonwalk": moonwalk,
+    "ballet_spin": ballet_spin,
+    "figure_eight": figure_eight,
+    "crescent_arc_left": crescent_arc_left,
+    "crescent_arc_right": crescent_arc_right,
+    
+    # REACTIONS (13)
+    "recoil_surprise": recoil_surprise,
+    "flinch": flinch,
+    "twitchy_nervous": twitchy_nervous,
+    "angry_shake": angry_shake,
+    "playful_bounce": playful_bounce,
+    "backflip_attempt": backflip_attempt,
+    "defensive_curl": defensive_curl,
+    "jump_excited": jump_excited,
+    "quick_look_left": quick_look_left,
+    "quick_look_right": quick_look_right,
+    "show_surprise": show_surprise,
+    "show_fear": show_fear,
+    "show_disgust": show_disgust,
+    
+    # SOCIAL (14)
+    "bow_respectfully": bow_respectfully,
+    "bow_apologetically": bow_apologetically,
+    "intro_pose": intro_pose,
+    "end_pose": end_pose,
+    "greet_wave": greet_wave,
+    "farewell_wave": farewell_wave,
+    "hello_friend": hello_friend,
+    "goodbye_friend": goodbye_friend,
+    "beckon_forward": beckon_forward,
+    "wait_here": wait_here,
+    "bashful_hide": bashful_hide,
+    "peekaboo": peekaboo,
+    "show_love": show_love,
+    "present_left": present_left,
+    "present_right": present_right,
+    
+    # CELEBRATION (7)
+    "spin_celebrate": spin_celebrate,
+    "spin_reverse": spin_reverse,
+    "cheer_wave": cheer_wave,
+    "celebrate_big": celebrate_big,
+    "applaud_motion": applaud_motion,
+    "victory_pose": victory_pose,
+    "show_joy": show_joy,
+    
+    # EMOTIONAL (15)
+    "sad_turnaway": sad_turnaway,
+    "confused_tilt": confused_tilt,
+    "look_proud": look_proud,
+    "sigh": sigh,
+    "yawn": yawn,
+    "stretch": stretch,
+    "bored_idle": bored_idle,
+    "think_long": think_long,
+    "ponder": ponder,
+    "dreamy_stare": dreamy_stare,
+    "ponder_and_nod": ponder_and_nod,
+    "approach_slowly": approach_slowly,
+    "back_off_slowly": back_off_slowly,
+    "dance_sad": dance_sad,
+    "show_thoughtfulness": show_thoughtfulness,
+    
+    # FUNCTIONAL (12)
+    "sleep_mode": sleep_mode,
+    "wake_up": wake_up,
+    "guard_pose": guard_pose,
+    "listen": listen,
+    "listen_close": listen_close,
+    "ready_pose": ready_pose,
+    "charge_pose": charge_pose,
+    "failure_pose": failure_pose,
+    "question_pose": question_pose,
+    "affirm_pose": affirm_pose,
+    "idle_breath": idle_breath,
+    "show_shyness": show_shyness,
+    
+    # SIGNALING (10)
+    "wave_head_no": wave_head_no,
+    "wave_head_yes": wave_head_yes,
+    "call_attention": call_attention,
+    "show_curiosity": show_curiosity,
+    "acknowledge_signal": acknowledge_signal,
+    "reject_signal": reject_signal,
+    "error_shrug": error_shrug,
+    "signal_complete": signal_complete,
+    "signal_error": signal_error,
+    "show_confidence": show_confidence,
+    
+    # ADVANCED (4)
+    "dance_happy": dance_happy,
+    "flirt": flirt,
+    "come_on_then": come_on_then,
+}
+
+def register_extended(actions_dict: dict) -> dict:
+    """Update an existing actions_dict with the extended gestures and return it."""
+    actions_dict.update(EXTENDED_GESTURES)
+    return actions_dict
