@@ -129,6 +129,61 @@ class SpeechRecognitionNode(NevilNode):
             self.logger.error(f"Failed to initialize speech recognition: {e}")
             raise
 
+    def _listen_with_timeout(self, timeout=10.0, phrase_time_limit=10.0, watchdog_timeout=25.0):
+        """
+        Wrap listen_for_speech in a thread with timeout.
+        If hung (exceeds watchdog_timeout), we know the mutex is stuck in that thread,
+        so we can safely replace it and abandon the hung thread.
+        """
+        import queue
+        import threading
+
+        result_queue = queue.Queue()
+
+        def _listen_thread():
+            try:
+                audio = self.audio_input.listen_for_speech(timeout=timeout, phrase_time_limit=phrase_time_limit)
+                result_queue.put(('success', audio))
+            except Exception as e:
+                result_queue.put(('error', e))
+
+        listen_thread = threading.Thread(target=_listen_thread, daemon=True, name="ListenWatchdog")
+        listen_thread.start()
+        listen_thread.join(timeout=watchdog_timeout)
+
+        if listen_thread.is_alive():
+            # HUNG! The hung thread is stuck in hardware access
+            # Try to stop the old AudioInput, then create a new one
+            self.logger.error(f"🚨 Microphone hung ({watchdog_timeout}s timeout) - recreating AudioInput...")
+
+            try:
+                # Try to stop the old AudioInput (may not fully work if thread is stuck)
+                old_audio_input = self.audio_input
+                old_audio_input.stop_event.set()  # Signal stop
+                old_audio_input.microphone_ready = False  # Mark as not ready
+
+                # Import here to avoid circular dependency
+                from audio.audio_input import AudioInput
+
+                # Create new AudioInput (REPLACES old reference, orphaning old instance)
+                self.audio_input = AudioInput(logger=self.logger)
+                self.logger.info("✓ AudioInput recreated (old instance signaled to stop)")
+
+            except Exception as e:
+                self.logger.error(f"Failed to recreate AudioInput: {e}")
+
+            return None
+
+        # Get result
+        try:
+            status, data = result_queue.get_nowait()
+            if status == 'error':
+                self.logger.warning(f"Listen error: {data}")
+                return None
+            return data
+        except queue.Empty:
+            return None
+
     def _discrete_recording_loop(self):
         """Discrete recording loop - v2.0 approach: Mic on → Record → Mic off → Process"""
         self.logger.info("Starting discrete recording loop...")
@@ -166,9 +221,11 @@ class SpeechRecognitionNode(NevilNode):
 
                     # 1. Mic ON - Listen WITHOUT holding busy_state
                     # This allows TTS to interrupt and speak while we're waiting for speech
-                    audio = self.audio_input.listen_for_speech(
+                    # Wrap in timeout to prevent hardware hang
+                    audio = self._listen_with_timeout(
                         timeout=10.0,  # Wait for speech
-                        phrase_time_limit=10.0  # Max recording time
+                        phrase_time_limit=10.0,  # Max recording time
+                        watchdog_timeout=25.0  # Watchdog: timeout + phrase_limit + 5s grace
                     )
 
                     # 2. Mic OFF (happens automatically when listen_for_speech returns)
