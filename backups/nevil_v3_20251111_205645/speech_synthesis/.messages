@@ -1,0 +1,176 @@
+# Speech Synthesis Node Message Configuration
+# Converts text to speech output using v1.0 Music() playback VERBATIM
+
+node_name: "speech_synthesis"
+version: "1.0"
+description: "Converts text to speech output using OpenAI TTS with v1.0 Music() playback"
+
+# Topics this node publishes to
+publishes:
+  - topic: "speaking_status"
+    message_type: "SpeakingStatus"
+    description: "Current speech synthesis status"
+    frequency: "on_change"
+    schema:
+      speaking:
+        type: "boolean"
+        required: true
+        description: "True if currently speaking"
+      text:
+        type: "string"
+        required: false
+        description: "Text being spoken"
+        max_length: 1000
+      voice:
+        type: "string"
+        required: false
+        description: "Voice being used"
+      progress:
+        type: "float"
+        required: false
+        description: "Speech progress (0.0 to 1.0)"
+        min: 0.0
+        max: 1.0
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "audio_output_status"
+    message_type: "AudioOutputStatus"
+    description: "Audio output device status"
+    frequency: "on_change"
+    schema:
+      available:
+        type: "boolean"
+        required: true
+        description: "True if audio output is available"
+      device:
+        type: "string"
+        required: false
+        description: "Audio output device name"
+      volume:
+        type: "float"
+        required: false
+        description: "Current volume (0.0 to 1.0)"
+        min: 0.0
+        max: 1.0
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "text_response"
+    message_type: "TextResponse"
+    callback: "on_text_response"
+    description: "Text to be converted to speech"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Text to speak"
+        max_length: 1000
+      voice:
+        type: "string"
+        required: false
+        description: "Voice to use"
+        default: "onyx"
+        allowed: ["onyx", "alloy", "echo", "fable", "nova", "shimmer"]
+      priority:
+        type: "integer"
+        required: false
+        description: "Message priority (lower = higher priority)"
+        default: 100
+        min: 1
+        max: 1000
+      speed:
+        type: "float"
+        required: false
+        description: "Speech speed multiplier"
+        default: 1.0
+        min: 0.5
+        max: 2.0
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "system_mode"
+    message_type: "SystemMode"
+    callback: "on_system_mode_change"
+    description: "System mode changes"
+    schema:
+      mode:
+        type: "string"
+        required: true
+        allowed: ["listening", "speaking", "thinking", "idle", "error"]
+
+  - topic: "tts_request"
+    message_type: "TTSRequest"
+    callback: "on_tts_request"
+    description: "Direct TTS requests from automatic mode"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Text to synthesize"
+        max_length: 1000
+      voice:
+        type: "string"
+        required: false
+        description: "Voice to use"
+        default: "onyx"
+        allowed: ["onyx", "alloy", "echo", "fable", "nova", "shimmer"]
+      priority:
+        type: "integer"
+        required: false
+        description: "Request priority"
+        default: 100
+        min: 1
+        max: 1000
+
+  - topic: "sound_effect"
+    message_type: "SoundEffect"
+    callback: "on_sound_effect"
+    description: "Sound effect playback requests"
+    schema:
+      effect:
+        type: "string"
+        required: true
+        description: "Sound effect to play"
+        allowed: ["honk", "rev_engine", "horn", "airhorn", "machinegun", "shock", "dubstep", "dubstep_bass", "reggae", "agent_theme", "ghost_laugh", "ghost_voice", "wolf_howl", "creepy_bell", "horror_hit", "inception_horn", "alien_voice", "alien_pitch", "alien_horn", "preacher"]
+      volume:
+        type: "integer"
+        required: false
+        description: "Playback volume (0-100)"
+        default: 100
+        min: 0
+        max: 100
+      priority:
+        type: "integer"
+        required: false
+        description: "Request priority"
+        default: 50
+        min: 1
+        max: 1000
+
+# Node configuration
+configuration:
+  # Audio output settings - v1.0 EXACT Music() usage
+  audio:
+    device: "system_default"  # NO device specification - use Music() defaults
+    volume_db: -10           # v1.0 VOLUME_DB setting
+    # NO channels, sample_rate, buffer_size - Music() handles all of this
+
+  # TTS settings - v1.0 pattern
+  tts:
+    model: "tts-1"           # OpenAI TTS model (tts-1 or tts-1-hd) - can override with NEVIL_TTS env var
+    default_voice: "onyx"    # v1.0 TTS_VOICE setting
+    default_speed: 1.0
+    api_timeout: 30.0
+    max_text_length: 1000
+    response_format: "wav"   # v1.0 format
+
+  # Performance settings
+  performance:
+    max_queue_size: 5
+    processing_timeout: 10.0
+    concurrent_synthesis: false  # Process one at a time like v1.0
