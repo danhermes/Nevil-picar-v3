@@ -60,30 +60,53 @@ nano .env
 # Add: OPENAI_API_KEY=sk-your-key-here
 ```
 
-### 5. Generate Node Implementations
+### 5. Review Translated Blane3 Code (ALREADY DONE)
+
+✅ **Translation script already ran on Windows:**
+- `nevil_framework/realtime/realtime_client_translated.py` (18 KB, from RealtimeClient.ts)
+- `nevil_framework/realtime/audio_capture_translated.py` (10 KB, from AudioCaptureManager.ts)
+- `nevil_framework/realtime/audio_buffer_translated.py` (11 KB, from AudioPlaybackManager.ts)
+
+These are **rough TypeScript→Python translations** that need manual adaptation.
+
+### 6. Adapt Translated Code for Nevil
 
 I need you to:
 
-**A. Generate speech_recognition_node22.py**
-- Continuous audio streaming from microphone
-- WebSocket to Realtime API
-- Server-side VAD
-- Publishes: `voice_command`
-- Must use existing microphone setup (same hardware as v3.0)
+**A. Adapt realtime_client_translated.py**
+- Fix Python asyncio patterns (replace TypeScript async patterns)
+- Add proper error handling
+- Integrate with Nevil's threading model
+- **Target**: realtime_connection_manager.py (production-ready)
 
-**B. Generate ai_node22.py**
-- Streaming conversation processing
+**B. Adapt audio_capture_translated.py**
+- Fix Python audio library (PyAudio on Pi)
+- Use existing microphone setup (same hardware as v3.0)
+- Integrate with Realtime API streaming
+- **Target**: audio_capture_manager.py
+
+**C. Create speech_recognition_node22.py** (new wrapper)
+- Wraps audio_capture_manager.py
+- Inherits from NevilNode
+- Publishes: `voice_command`
+- Uses .messages configuration
+- **Lines**: ~200-300 (wrapper only)
+
+**D. Create ai_node22.py** (new implementation)
+- Streaming conversation with Realtime API
 - Function calling for 106 gestures
 - Camera integration (multimodal)
 - Publishes: `text_response`, `robot_action`
+- **Lines**: ~300-400
 
-**C. Generate speech_synthesis_node22.py** ⚠️ CRITICAL
-- Buffer streaming audio from Realtime API
-- Save complete audio to WAV file
+**E. Create speech_synthesis_node22.py** ⚠️ CRITICAL (new wrapper)
+- Uses audio_buffer_translated.py to accumulate chunks
+- Saves complete audio to WAV file
 - **MUST USE**: `AudioOutput` from `audio/audio_output.py`
 - **MUST USE**: `robot_hat.Music()` for playback
 - **NEVER USE**: PyAudio for playback
 - Publishes: `speaking_status`
+- **Lines**: ~200-300 (wrapper only)
 
 ### 6. Key Constraints
 
@@ -116,13 +139,20 @@ Before running on robot:
 
 ### 8. What You Need to Build
 
-Generate these files with full implementations:
+**Adapt** translated Blane3 code:
+1. `nevil_framework/realtime/realtime_connection_manager.py` (adapt from _translated.py)
+2. `nevil_framework/realtime/audio_capture_manager.py` (adapt from _translated.py)
 
-1. `nodes/speech_recognition_realtime/speech_recognition_node22.py`
-2. `nodes/ai_cognition_realtime/ai_node22.py`
-3. `nodes/speech_synthesis_realtime/speech_synthesis_node22.py`
-4. `.messages` files for each node
-5. Test files in `tests/realtime/`
+**Create** new Nevil node wrappers:
+3. `nodes/speech_recognition_realtime/speech_recognition_node22.py` (wrapper)
+4. `nodes/ai_cognition_realtime/ai_node22.py` (new implementation)
+5. `nodes/speech_synthesis_realtime/speech_synthesis_node22.py` (wrapper + robot_hat.Music())
+
+**Create** configuration:
+6. `.messages` files for each node
+7. Test files in `tests/realtime/`
+
+**Key Point**: We're adapting 1,300+ lines of proven Blane3 code, not writing from scratch!
 
 ### 9. Reference Documentation
 
@@ -136,9 +166,10 @@ All docs are in the repo:
 ### 10. Expected Timeline
 
 - Setup on Pi: 10 minutes
-- Generate 3 nodes: 2-3 hours (with your help)
+- Adapt translated Blane3 code: 2-3 hours (with your help)
+- Create node wrappers: 1-2 hours (much less code now!)
 - Testing: 1-2 hours
-- Total: Half day of work
+- Total: Half day of work (much faster than 1-2 days from scratch!)
 
 ### 11. Success Criteria
 
