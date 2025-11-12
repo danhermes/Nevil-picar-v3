@@ -1,0 +1,164 @@
+# Speech Recognition Node Message Configuration
+# Converts voice input to text commands using v1.0+v2.0 extracted audio code
+
+node_name: "speech_recognition"
+version: "1.0"
+description: "Converts voice input to text commands using OpenAI Whisper with v1.0 parameters and v2.0 threading"
+
+# Topics this node publishes to
+publishes:
+  - topic: "voice_command"
+    message_type: "VoiceCommand"
+    description: "Recognized voice commands with confidence scores"
+    frequency: "on_demand"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Recognized text from speech"
+        max_length: 500
+      confidence:
+        type: "float"
+        required: true
+        description: "Recognition confidence (0.0 to 1.0)"
+        min: 0.0
+        max: 1.0
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp when speech was recognized"
+      language:
+        type: "string"
+        required: false
+        description: "Detected language code"
+        default: "en-US"
+      duration:
+        type: "float"
+        required: false
+        description: "Duration of speech in seconds"
+        min: 0.0
+
+  - topic: "audio_level"
+    message_type: "AudioLevel"
+    description: "Current microphone audio level for monitoring"
+    frequency: "continuous"
+    schema:
+      level:
+        type: "float"
+        required: true
+        description: "Audio level (0.0 to 1.0)"
+        min: 0.0
+
+  - topic: "auto_mode_command"
+    message_type: "AutoModeCommand"
+    description: "Direct auto mode commands detected in speech"
+    frequency: "on_demand"
+    schema:
+      command:
+        type: "string"
+        required: true
+        description: "Auto mode command to execute"
+        allowed: ["start", "stop"]
+      trigger:
+        type: "string"
+        required: true
+        description: "Trigger phrase that activated the command"
+      original_text:
+        type: "string"
+        required: true
+        description: "Original speech text that contained the trigger"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp when command was detected"
+
+  - topic: "listening_status"
+    message_type: "ListeningStatus"
+    description: "Whether the node is actively listening"
+    frequency: "on_change"
+    schema:
+      listening:
+        type: "boolean"
+        required: true
+        description: "True if actively listening for speech"
+      reason:
+        type: "string"
+        required: false
+        description: "Reason for status change"
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "system_mode"
+    message_type: "SystemMode"
+    callback: "on_system_mode_change"
+    description: "System-wide mode changes"
+    schema:
+      mode:
+        type: "string"
+        required: true
+        description: "Current system mode"
+        allowed: ["listening", "speaking", "thinking", "idle", "error"]
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp of mode change"
+
+  - topic: "speaking_status"
+    message_type: "SpeakingStatus"
+    callback: "on_speaking_status_change"
+    description: "Speech synthesis status updates"
+    schema:
+      speaking:
+        type: "boolean"
+        required: true
+        description: "True if speech synthesis is active"
+      text:
+        type: "string"
+        required: false
+        description: "Text being spoken (if speaking=true)"
+
+  - topic: "navigation_status"
+    message_type: "NavigationStatus"
+    callback: "on_navigation_status_change"
+    description: "Navigation execution status updates"
+    schema:
+      status:
+        type: "string"
+        required: true
+        description: "Current navigation status"
+        allowed: ["idle", "executing", "completed", "error"]
+      current_action:
+        type: "string"
+        required: false
+        description: "Currently executing action"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+# Node configuration
+configuration:
+  # Audio input settings - v1.0 EXACT parameters
+  audio:
+    device: "system_default"  # NO device specification - use defaults
+    energy_threshold: 300
+    pause_threshold: 0.5
+    dynamic_energy_adjustment_damping: 0.1
+    dynamic_energy_ratio: 1.2
+    operation_timeout: 18
+    phrase_threshold: 0.5
+    non_speaking_duration: 0.5
+    chunk_size: 32768
+
+  # Speech recognition settings
+  recognition:
+    language: "en-US"
+    timeout: 10.0
+    phrase_time_limit: 10.0
+    confidence_threshold: 0.5
+
+  # Performance settings - v2.0 threading
+  performance:
+    max_queue_size: 10
+    processing_timeout: 5.0
+    continuous_listening: true
