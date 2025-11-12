@@ -118,7 +118,7 @@ subscribes:
         required: false
         description: "Voice to use"
         default: "onyx"
-        allowed: ["onyx", "alloy", "echo", "fable", "nova", "shimmer"]
+        allowed: ["onyx", "alloy", "echo", "fable", "cedar", "shimmer"]
       priority:
         type: "integer"
         required: false

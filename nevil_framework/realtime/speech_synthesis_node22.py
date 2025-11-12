@@ -1,0 +1,541 @@
+"""
+Speech Synthesis Node for Nevil v2.2 - Realtime API Streaming TTS
+
+⚠️ CRITICAL: Uses EXACT same playback as v3.0 (robot_hat.Music())
+
+Changes from v3.0:
+- Audio generation: OpenAI Realtime API streaming (200-400ms) - FASTER
+- Buffers streaming audio chunks from response.audio.delta events
+- Saves complete audio to WAV file on response.audio.done
+
+Preserved from v3.0:
+- Audio playback: robot_hat.Music() via AudioOutput class - UNCHANGED
+- File: audio/audio_output.py - UNTOUCHED
+- Hardware: HiFiBerry DAC, GPIO pin 20 - IDENTICAL
+- WAV file format: PCM16, 24kHz mono - SAME
+
+Architecture:
+    Realtime API streaming → Buffer chunks → Save to WAV → robot_hat.Music() plays
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^             ^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^
+    NEW (faster generation)                 SAME           SAME (hardware playback)
+
+Translation date: 2025-11-11
+Status: Production-ready
+"""
+
+import time
+import os
+import threading
+import wave
+import base64
+import warnings
+from typing import Optional, Dict, Any
+from dotenv import load_dotenv
+
+from nevil_framework.base_node import NevilNode
+from nevil_framework.chat_logger import get_chat_logger
+
+# Load environment variables
+load_dotenv()
+
+# Suppress ALSA warnings if environment variable is set
+if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="ALSA")
+
+# Set ALSA verbosity to 0 if specified
+if os.getenv('ALSA_VERBOSITY') == '0':
+    os.environ['ALSA_VERBOSITY'] = '0'
+
+from nevil_framework.microphone_mutex import microphone_mutex
+
+# ⚠️ CRITICAL: Import EXACT audio output class from v3.0
+# This contains robot_hat.Music() - DO NOT REPLACE
+from audio.audio_output import AudioOutput
+from audio.audio_utils import generate_tts_filename
+
+
+class SpeechSynthesisNode22(NevilNode):
+    """
+    Speech Synthesis Node using OpenAI Realtime API for streaming TTS.
+
+    ⚠️ CRITICAL: Uses EXACT same playback method as v3.0 (robot_hat.Music())
+
+    Key Features:
+    - Streaming audio generation from Realtime API (FASTER)
+    - Buffer audio chunks in memory during streaming
+    - Save complete audio to WAV file when done
+    - Play via robot_hat.Music() (IDENTICAL to v3.0)
+    - Thread-safe buffer management
+    - Declarative messaging via .messages configuration
+
+    Event Flow:
+    1. Subscribe to text_response topic
+    2. On text: request audio from Realtime API
+    3. Buffer chunks from response.audio.delta events
+    4. On response.audio.done: save WAV → play via robot_hat.Music()
+    5. Publish speaking_status throughout
+    """
+
+    def __init__(self):
+        # Initialize with correct config path
+        super().__init__(
+            "speech_synthesis_realtime",
+            config_path="nodes/speech_synthesis_realtime/.messages"
+        )
+
+        # Initialize chat logger for performance tracking
+        self.chat_logger = get_chat_logger()
+
+        # ⚠️ CRITICAL: Use EXACT v3.0 audio output class
+        # Contains robot_hat.Music() - DO NOT REPLACE
+        self.audio_output: Optional[AudioOutput] = None
+
+        # Realtime API connection manager (set by launcher)
+        self.realtime_manager = None
+
+        # Audio streaming buffer - collect chunks here
+        self.audio_buffer = []
+        self.buffer_lock = threading.Lock()
+        self.current_item_id: Optional[str] = None
+        self.current_conversation_id: Optional[str] = None
+
+        # Transcript buffer for text alongside audio
+        self.transcript_buffer = []
+        self.transcript_lock = threading.Lock()
+
+        # Configuration from .messages file
+        config = self.config.get('configuration', {})
+        self.audio_config = config.get('audio', {})
+        self.tts_config = config.get('tts', {})
+
+        # State management
+        self.is_speaking = False
+        self.current_text = ""
+        self.speaking_lock = threading.Lock()
+
+        # Performance tracking
+        self.synthesis_count = 0
+        self.error_count = 0
+        self.last_synthesis_time = 0
+
+        self.logger.info("Speech Synthesis Node22 (Realtime) initialized")
+
+    def initialize(self):
+        """Initialize speech synthesis components and register event handlers"""
+        self.logger.info("Initializing Speech Synthesis Node22 (Realtime)...")
+
+        try:
+            # ⚠️ CRITICAL: Initialize audio output with v1.0 Music() VERBATIM
+            # This is the EXACT same AudioOutput class used in v3.0
+            self.audio_output = AudioOutput()
+            self.logger.info("AudioOutput initialized with robot_hat.Music()")
+
+            # Register Realtime API event handlers
+            if self.realtime_manager:
+                self._register_realtime_handlers()
+                self.logger.info("Registered Realtime API event handlers")
+            else:
+                self.logger.warning("No realtime_manager available - will register later")
+
+            # Log configuration
+            self.logger.info("Speech Synthesis Node22 Configuration:")
+            self.logger.info(f"  Default voice: {self.tts_config.get('default_voice', 'alloy')}")
+            self.logger.info(f"  Volume: {self.audio_config.get('volume_db', -10)} dB")
+            self.logger.info(f"  Output format: PCM16 24kHz mono")
+            self.logger.info(f"  Playback: robot_hat.Music() (EXACT v3.0)")
+
+            # Publish initial status
+            self._publish_audio_output_status()
+
+            self.logger.info("Speech Synthesis Node22 initialization complete")
+
+        except Exception as e:
+            self.logger.error(f"Failed to initialize speech synthesis: {e}")
+            raise
+
+    def set_realtime_manager(self, realtime_manager):
+        """Set the realtime connection manager and register event handlers"""
+        self.realtime_manager = realtime_manager
+        if self.realtime_manager:
+            self._register_realtime_handlers()
+            self.logger.info("Realtime manager set and event handlers registered")
+
+    def _register_realtime_handlers(self):
+        """Register event handlers for Realtime API audio events"""
+        if not self.realtime_manager:
+            return
+
+        # Register handlers using the event handler system
+        event_handlers = self.realtime_manager.event_handler
+
+        # Audio streaming events
+        event_handlers.on("response.audio.delta", self._on_audio_delta)
+        event_handlers.on("response.audio.done", self._on_audio_done)
+
+        # Transcript events (optional - for monitoring)
+        event_handlers.on("response.audio_transcript.delta", self._on_transcript_delta)
+        event_handlers.on("response.audio_transcript.done", self._on_transcript_done)
+
+        # Response lifecycle events
+        event_handlers.on("response.output_item.added", self._on_output_item_added)
+        event_handlers.on("response.done", self._on_response_done)
+
+        self.logger.debug("Registered Realtime API event handlers for streaming TTS")
+
+    def _on_output_item_added(self, event: Dict[str, Any]):
+        """Track when a new output item is created"""
+        try:
+            item = event.get('item', {})
+            item_id = item.get('id')
+            item_type = item.get('type')
+
+            if item_type == 'message' and item.get('role') == 'assistant':
+                with self.buffer_lock:
+                    self.current_item_id = item_id
+                    self.audio_buffer.clear()
+
+                with self.transcript_lock:
+                    self.transcript_buffer.clear()
+
+                self.logger.debug(f"Started new audio output item: {item_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error in _on_output_item_added: {e}")
+
+    def _on_audio_delta(self, event: Dict[str, Any]):
+        """
+        Receive streaming audio chunk from Realtime API.
+        Buffer it in memory - do NOT play yet.
+
+        ⚠️ CRITICAL: This only buffers - playback uses robot_hat.Music() later
+        """
+        try:
+            # Extract base64 encoded audio chunk
+            audio_b64 = event.get('delta')
+            if not audio_b64:
+                return
+
+            # Decode from base64 to PCM16 bytes
+            audio_chunk = base64.b64decode(audio_b64)
+
+            # Add to buffer
+            with self.buffer_lock:
+                self.audio_buffer.append(audio_chunk)
+
+            self.logger.debug(f"Buffered audio chunk: {len(audio_chunk)} bytes (total: {sum(len(c) for c in self.audio_buffer)} bytes)")
+
+        except Exception as e:
+            self.logger.error(f"Error buffering audio chunk: {e}")
+
+    def _on_transcript_delta(self, event: Dict[str, Any]):
+        """Buffer transcript text alongside audio"""
+        try:
+            delta = event.get('delta', '')
+            if delta:
+                with self.transcript_lock:
+                    self.transcript_buffer.append(delta)
+
+        except Exception as e:
+            self.logger.error(f"Error in transcript delta: {e}")
+
+    def _on_transcript_done(self, event: Dict[str, Any]):
+        """Log complete transcript"""
+        try:
+            with self.transcript_lock:
+                transcript = ''.join(self.transcript_buffer)
+                if transcript:
+                    self.logger.info(f"Transcript: {transcript}")
+
+        except Exception as e:
+            self.logger.error(f"Error in transcript done: {e}")
+
+    def _on_audio_done(self, event: Dict[str, Any]):
+        """
+        All audio received. Now save to WAV and play.
+
+        ⚠️ CRITICAL: This is where we use EXISTING playback method (robot_hat.Music())
+        """
+        try:
+            processing_start = time.time()
+
+            # 1. Concatenate all buffered chunks
+            with self.buffer_lock:
+                if not self.audio_buffer:
+                    self.logger.warning("Audio done but buffer is empty")
+                    return
+
+                complete_audio = b''.join(self.audio_buffer)
+                buffer_size = len(complete_audio)
+                self.audio_buffer.clear()
+
+            self.logger.info(f"Audio generation complete: {buffer_size} bytes ({buffer_size / (24000 * 2):.2f}s at 24kHz PCM16)")
+
+            # 2. Get conversation context
+            conversation_id = self.current_conversation_id
+            if not conversation_id:
+                conversation_id = self.chat_logger.generate_conversation_id()
+                self.logger.warning(f"No conversation_id in TTS, generated: {conversation_id}")
+
+            # Get transcript for logging
+            with self.transcript_lock:
+                transcript = ''.join(self.transcript_buffer)
+                self.transcript_buffer.clear()
+
+            # 3. Save to WAV file (REQUIRED for robot_hat.Music())
+            volume_db = self.audio_config.get("volume_db", -10)
+            wav_file, _ = generate_tts_filename(volume_db=volume_db)
+
+            save_start = time.time()
+            self._save_pcm16_to_wav(complete_audio, wav_file, sample_rate=24000)
+            save_time = time.time() - save_start
+
+            self.logger.info(f"Saved audio to: {wav_file} ({save_time*1000:.1f}ms)")
+
+            # 4. Acquire microphone mutex for playback
+            microphone_mutex.acquire_noisy_activity("speaking")
+
+            try:
+                with self.speaking_lock:
+                    self.is_speaking = True
+                    self.current_text = transcript
+
+                # Publish speaking status
+                voice = self.tts_config.get("default_voice", "alloy")
+                self._publish_speaking_status(True, transcript, voice)
+
+                # 5. ⚠️ CRITICAL: Use EXACT existing playback method
+                # This is the SAME code path as v3.0 speech_synthesis_node
+                self.audio_output.tts_file = wav_file
+                with self.audio_output.speech_lock:
+                    self.audio_output.speech_loaded = True
+
+                # Log TTS step (for compatibility with chat logger)
+                tts_metadata = {
+                    "voice": voice,
+                    "model": "gpt-4o-realtime-preview-2024-12-17",
+                    "volume_db": volume_db,
+                    "buffer_size_bytes": buffer_size,
+                    "save_time_ms": save_time * 1000
+                }
+
+                with self.chat_logger.log_step(
+                    conversation_id, "tts",
+                    input_text=transcript[:200] if transcript else "<streaming_audio>",
+                    metadata=tts_metadata
+                ) as tts_log:
+
+                    playback_start = time.time()
+
+                    # This internally calls play_audio_file(self.music, wav_file)
+                    # which uses robot_hat.Music() - DO NOT CHANGE
+                    success = self.audio_output.play_loaded_speech()
+
+                    playback_time = time.time() - playback_start
+
+                    # Update metadata with timing
+                    tts_metadata["playback_ms"] = playback_time * 1000
+                    tts_log["output_text"] = "<audio_file>" if success else "<tts_failed>"
+
+                # Log response completion
+                with self.chat_logger.log_step(
+                    conversation_id, "response",
+                    input_text="<audio_file>",
+                    metadata={"success": success, "device": "speaker"}
+                ) as resp_log:
+                    resp_log["output_text"] = "playback_complete" if success else "playback_failed"
+
+                if success:
+                    total_time = time.time() - processing_start
+                    self.logger.info(f"✓ Playback complete (robot_hat.Music()) in {total_time:.3f}s")
+                    self.synthesis_count += 1
+                    self.last_synthesis_time = time.time()
+                else:
+                    self.logger.error("❌ Playback failed")
+                    self.error_count += 1
+
+            finally:
+                # Always clear speaking status
+                with self.speaking_lock:
+                    self.is_speaking = False
+                    self.current_text = ""
+
+                # Log sleep delay (audio buffer clearing time)
+                with self.chat_logger.log_step(
+                    conversation_id, "sleep",
+                    input_text="post_tts_delay",
+                    metadata={"reason": "audio_buffer_clear", "delay_ms": 1000}
+                ) as sleep_log:
+                    time.sleep(1.0)
+                    sleep_log["output_text"] = "delay_complete"
+
+                # Publish speaking status
+                self._publish_speaking_status(False, "", "")
+
+                # Release microphone mutex
+                microphone_mutex.release_noisy_activity("speaking")
+
+        except Exception as e:
+            self.logger.error(f"Error in audio done handler: {e}", exc_info=True)
+            self.error_count += 1
+
+            # Ensure cleanup on error
+            with self.speaking_lock:
+                self.is_speaking = False
+            microphone_mutex.release_noisy_activity("speaking")
+
+    def _on_response_done(self, event: Dict[str, Any]):
+        """Response fully complete - cleanup"""
+        try:
+            with self.buffer_lock:
+                self.current_item_id = None
+                self.audio_buffer.clear()
+
+            self.logger.debug("Response complete, buffers cleared")
+
+        except Exception as e:
+            self.logger.error(f"Error in response done: {e}")
+
+    def _save_pcm16_to_wav(self, pcm_data: bytes, output_file: str, sample_rate: int = 24000):
+        """
+        Save raw PCM16 bytes to WAV file.
+
+        Args:
+            pcm_data: Raw PCM16 audio bytes from Realtime API
+            output_file: Output WAV file path
+            sample_rate: Sample rate (default 24000 Hz)
+        """
+        try:
+            with wave.open(output_file, 'wb') as wav:
+                wav.setnchannels(1)  # Mono
+                wav.setsampwidth(2)  # 16-bit (2 bytes per sample)
+                wav.setframerate(sample_rate)
+                wav.writeframes(pcm_data)
+
+        except Exception as e:
+            self.logger.error(f"Error saving PCM16 to WAV: {e}")
+            raise
+
+    def main_loop(self):
+        """Main processing loop - minimal since streaming is event-driven"""
+        try:
+            # Brief pause to prevent busy waiting
+            # Real work happens in event handlers
+            time.sleep(0.1)
+
+        except Exception as e:
+            self.logger.error(f"Error in speech synthesis main loop: {e}")
+            self.error_count += 1
+            time.sleep(1.0)
+
+    def _publish_speaking_status(self, speaking: bool, text: str, voice: str):
+        """Publish speaking status change"""
+        status_data = {
+            "speaking": speaking,
+            "text": text,
+            "voice": voice,
+            "progress": 1.0 if not speaking else 0.0,
+            "timestamp": time.time()
+        }
+        self.publish("speaking_status", status_data)
+
+    def _publish_audio_output_status(self):
+        """Publish audio output status"""
+        status_data = {
+            "available": self.audio_output is not None,
+            "device": "system_default_music",
+            "volume": 1.0  # Music() handles volume internally
+        }
+        self.publish("audio_output_status", status_data)
+
+    # ============================================================================
+    # Declaratively configured callback methods (from .messages file)
+    # ============================================================================
+
+    def on_text_response(self, message):
+        """
+        Handle text response messages (declaratively configured callback).
+
+        ⚠️ CRITICAL: This requests audio from Realtime API,
+        but playback still uses robot_hat.Music()
+        """
+        try:
+            text = message.data.get("text", "")
+            if not text.strip():
+                self.logger.warning("Received empty text response, ignoring")
+                return
+
+            # Extract parameters
+            voice = message.data.get("voice", self.tts_config.get("default_voice", "alloy"))
+            conversation_id = message.data.get("conversation_id")
+
+            # Store conversation context
+            self.current_conversation_id = conversation_id
+
+            self.logger.info(f"Requesting TTS from Realtime API: '{text[:50]}'... (voice: {voice})")
+
+            # Send to Realtime API for audio generation
+            # The response will come back via response.audio.delta events
+            if self.realtime_manager:
+                self.realtime_manager.send_event({
+                    "type": "response.create",
+                    "response": {
+                        "modalities": ["audio", "text"],
+                        "instructions": f"Say: {text}",
+                        "voice": voice,
+                        "output_audio_format": "pcm16"
+                    }
+                })
+            else:
+                self.logger.error("No realtime_manager available for TTS request")
+
+        except Exception as e:
+            self.logger.error(f"Error handling text response: {e}")
+
+    def on_system_mode_change(self, message):
+        """Handle system mode changes (declaratively configured callback)"""
+        try:
+            mode = message.data.get("mode", "idle")
+            self.logger.debug(f"System mode changed to: {mode}")
+
+            # Stop current synthesis if switching away from speaking mode
+            if mode != "speaking" and self.is_speaking:
+                self.logger.info("Stopping current synthesis due to mode change")
+                if self.audio_output:
+                    self.audio_output.stop_playback()
+
+        except Exception as e:
+            self.logger.error(f"Error handling system mode change: {e}")
+
+    def cleanup(self):
+        """Cleanup speech synthesis resources"""
+        self.logger.info("Cleaning up speech synthesis...")
+
+        try:
+            # Stop any current playback
+            if self.audio_output:
+                self.audio_output.stop_playback()
+                self.audio_output.cleanup()
+
+            # Clear buffers
+            with self.buffer_lock:
+                self.audio_buffer.clear()
+
+            with self.transcript_lock:
+                self.transcript_buffer.clear()
+
+        except Exception as e:
+            self.logger.error(f"Error during speech synthesis cleanup: {e}")
+
+        self.logger.info(f"Speech synthesis stopped after {self.synthesis_count} syntheses")
+
+    def get_synthesis_stats(self):
+        """Get speech synthesis statistics"""
+        return {
+            "synthesis_count": self.synthesis_count,
+            "error_count": self.error_count,
+            "is_speaking": self.is_speaking,
+            "current_text": self.current_text,
+            "buffer_size": sum(len(c) for c in self.audio_buffer),
+            "last_synthesis_time": self.last_synthesis_time,
+            "audio_status": self.audio_output.get_status() if self.audio_output else None
+        }

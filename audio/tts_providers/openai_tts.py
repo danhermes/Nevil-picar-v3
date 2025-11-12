@@ -74,7 +74,7 @@ class OpenAITTSProvider(TTSProviderBase):
 
     def get_available_voices(self) -> list:
         """Get list of available OpenAI voices"""
-        return ["onyx", "alloy", "echo", "fable", "nova", "shimmer"]
+        return ["onyx", "alloy", "echo", "fable", "cedar", "shimmer"]
 
     def get_provider_name(self) -> str:
         """Get provider name"""

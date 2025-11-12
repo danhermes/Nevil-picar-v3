@@ -548,12 +548,81 @@ pcm.!default {{
 
             self.running = True
             print(f"[Launcher] System started successfully with {len(self.nodes)} nodes")
+
+            # Share Realtime API connection from ai_cognition to other realtime nodes
+            self._share_realtime_connection()
+
             print(f"[Launcher] Returning from start_system() with True")
             return True
 
         except Exception as e:
             print(f"[Launcher] Error starting system: {e}")
             return False
+
+    def _share_realtime_connection(self):
+        """
+        Share the Realtime API connection from ai_cognition to other realtime nodes.
+        This ensures all nodes use a single WebSocket connection to the Realtime API.
+        """
+        try:
+            # Find ai_cognition_realtime node
+            ai_cognition_node_name = "ai_cognition_realtime"
+            if ai_cognition_node_name not in self.nodes:
+                self.logger.debug("ai_cognition_realtime not found, skipping connection sharing")
+                return
+
+            # Get the node instance
+            ai_cognition_process = self.nodes[ai_cognition_node_name]
+            if not hasattr(ai_cognition_process, 'node_instance'):
+                self.logger.warning("ai_cognition_realtime not initialized yet")
+                return
+
+            ai_cognition_node = ai_cognition_process.node_instance
+
+            # Get the connection manager
+            if not hasattr(ai_cognition_node, 'connection_manager'):
+                self.logger.warning("ai_cognition_realtime has no connection_manager")
+                return
+
+            connection_manager = ai_cognition_node.connection_manager
+            if connection_manager is None:
+                self.logger.warning("ai_cognition_realtime connection_manager is None")
+                return
+
+            self.logger.info("Sharing Realtime API connection from ai_cognition to other nodes...")
+
+            # Share with speech_recognition_realtime
+            speech_recog_node_name = "speech_recognition_realtime"
+            if speech_recog_node_name in self.nodes:
+                speech_recog_process = self.nodes[speech_recog_node_name]
+                if hasattr(speech_recog_process, 'node_instance'):
+                    speech_recog_node = speech_recog_process.node_instance
+                    if hasattr(speech_recog_node, 'set_realtime_manager'):
+                        speech_recog_node.set_realtime_manager(connection_manager)
+                        self.logger.info("✓ Shared connection with speech_recognition_realtime")
+                    else:
+                        self.logger.warning("speech_recognition_realtime has no set_realtime_manager() method")
+                else:
+                    self.logger.warning("speech_recognition_realtime not initialized yet")
+
+            # Share with speech_synthesis_realtime
+            speech_synth_node_name = "speech_synthesis_realtime"
+            if speech_synth_node_name in self.nodes:
+                speech_synth_process = self.nodes[speech_synth_node_name]
+                if hasattr(speech_synth_process, 'node_instance'):
+                    speech_synth_node = speech_synth_process.node_instance
+                    if hasattr(speech_synth_node, 'set_realtime_manager'):
+                        speech_synth_node.set_realtime_manager(connection_manager)
+                        self.logger.info("✓ Shared connection with speech_synthesis_realtime")
+                    else:
+                        self.logger.warning("speech_synthesis_realtime has no set_realtime_manager() method")
+                else:
+                    self.logger.warning("speech_synthesis_realtime not initialized yet")
+
+            self.logger.info("Realtime API connection sharing complete")
+
+        except Exception as e:
+            self.logger.error(f"Error sharing Realtime API connection: {e}")
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals with v2.0 aggressive cleanup pattern"""

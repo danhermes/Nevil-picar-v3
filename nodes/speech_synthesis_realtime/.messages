@@ -1,0 +1,115 @@
+# Speech Synthesis Node22 Message Configuration
+# Converts text to speech using OpenAI Realtime API streaming TTS
+# ⚠️ CRITICAL: Uses robot_hat.Music() playback (EXACT v3.0)
+
+node_name: "speech_synthesis_realtime"
+version: "2.2"
+description: "Streaming TTS via OpenAI Realtime API with robot_hat.Music() playback"
+
+# Topics this node publishes to
+publishes:
+  - topic: "speaking_status"
+    message_type: "SpeakingStatus"
+    description: "Current speech synthesis status"
+    frequency: "on_change"
+    schema:
+      speaking:
+        type: "boolean"
+        required: true
+        description: "True if currently speaking"
+      text:
+        type: "string"
+        required: false
+        description: "Text being spoken"
+        max_length: 1000
+      voice:
+        type: "string"
+        required: false
+        description: "Voice being used"
+      progress:
+        type: "float"
+        required: false
+        description: "Speech progress (0.0 to 1.0)"
+        min: 0.0
+        max: 1.0
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "audio_output_status"
+    message_type: "AudioOutputStatus"
+    description: "Audio output device status"
+    frequency: "on_change"
+    schema:
+      available:
+        type: "boolean"
+        required: true
+        description: "True if audio output is available"
+      device:
+        type: "string"
+        required: false
+        description: "Audio output device name"
+      volume:
+        type: "float"
+        required: false
+        description: "Current volume (0.0 to 1.0)"
+        min: 0.0
+        max: 1.0
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "text_response"
+    message_type: "TextResponse"
+    callback: "on_text_response"
+    description: "Text to be converted to speech via Realtime API"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Text to speak"
+        max_length: 1000
+      voice:
+        type: "string"
+        required: false
+        description: "Voice to use"
+        default: "alloy"
+        allowed: ["alloy", "echo", "shimmer"]
+      conversation_id:
+        type: "string"
+        required: false
+        description: "Conversation ID for logging"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "system_mode"
+    message_type: "SystemMode"
+    callback: "on_system_mode_change"
+    description: "System mode changes"
+    schema:
+      mode:
+        type: "string"
+        required: true
+        allowed: ["listening", "speaking", "thinking", "idle", "error"]
+
+# Node configuration
+configuration:
+  # Audio output settings - v1.0 EXACT Music() usage
+  audio:
+    device: "system_default"  # NO device specification - use Music() defaults
+    volume_db: -10           # v1.0 VOLUME_DB setting
+    # NO channels, sample_rate, buffer_size - Music() handles all of this
+
+  # TTS settings - Realtime API
+  tts:
+    model: "gpt-4o-realtime-preview-2024-12-17"  # Realtime API model
+    default_voice: "alloy"    # Realtime API voice
+    output_format: "pcm16"    # 16-bit PCM, 24kHz mono
+    sample_rate: 24000        # Realtime API audio format
+
+  # Performance settings
+  performance:
+    buffer_timeout: 10.0      # Max time to wait for audio chunks
+    max_buffer_size: 10485760 # 10MB max audio buffer

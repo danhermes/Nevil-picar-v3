@@ -1,0 +1,63 @@
+# AI Node v2.2 Message Configuration
+# OpenAI Realtime API streaming conversation node
+
+node_name: "ai_cognition_realtime"
+version: "2.2"
+description: "Realtime API streaming conversation with function calling for 106+ gestures"
+
+# Topics this node publishes to
+publishes:
+  - topic: "text_response"
+    message_type: "TextResponse"
+    description: "Streaming text responses from Realtime API"
+    frequency: "streaming"
+
+  - topic: "system_mode"
+    message_type: "SystemMode"
+    description: "System mode changes"
+    frequency: "on_change"
+
+  - topic: "robot_action"
+    message_type: "RobotAction"
+    description: "Movement and gesture commands from function calls"
+    frequency: "on_demand"
+
+  - topic: "mood_change"
+    message_type: "MoodChange"
+    description: "AI mood changes"
+    frequency: "on_change"
+
+  - topic: "snap_pic"
+    message_type: "SnapPicRequest"
+    description: "Camera capture requests via function calling"
+    frequency: "on_demand"
+
+# Topics this node subscribes to
+subscribes:
+  - topic: "voice_command"
+    message_type: "VoiceCommand"
+    callback: "on_voice_command"
+    description: "Voice commands to process"
+
+  - topic: "visual_data"
+    message_type: "VisualData"
+    callback: "on_visual_data"
+    description: "Camera image data for multimodal AI processing"
+
+# Node configuration
+configuration:
+  # AI settings
+  ai:
+    system_prompt: "You are Nevil, a witty robot dog/car with camera and 106+ gestures. Concise: 1-2 lyrical sentences with the rare longer diatribe. Slow your voice and pace just a bit to be very relaxed. Use function calling liberally for gestures and movement. Visual curiosity encouraged."
+
+  # Realtime API settings
+  realtime:
+    model: "gpt-4o-realtime-preview-2024-12-17"
+    voice: "cedar"
+    temperature: 0.8
+    modalities: ["text", "audio"]
+
+  # Processing settings
+  processing:
+    max_queue_size: 5
+    processing_timeout: 10.0

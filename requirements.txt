@@ -4,12 +4,11 @@
 PyYAML>=6.0
 python-dateutil>=2.8.0
 
-# Audio dependencies (for Week 2)
-# These will be added in Week 2 when we integrate v1.0 audio components:
-# SpeechRecognition>=3.10.0
-# openai>=1.0.0
-# pygame>=2.5.0
-# pyaudio>=0.2.11
+# Audio dependencies
+SpeechRecognition>=3.10.0
+openai>=1.0.0
+pygame>=2.5.0
+pyaudio>=0.2.11  # Required for Realtime API audio capture
 
 # Development and testing
 # pytest>=7.0.0
