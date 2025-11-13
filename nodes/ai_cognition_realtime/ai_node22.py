@@ -194,6 +194,7 @@ class AiNode22(NevilNode):
             )
 
             # Create session configuration with function calling
+            # CRITICAL: turn_detection=None to use our local VAD and enable input transcription events
             session_config = SessionConfig(
                 model=self.model,
                 modalities=self.modalities,
@@ -202,12 +203,10 @@ class AiNode22(NevilNode):
                 temperature=self.temperature,
                 tools=self.gesture_definitions,
                 tool_choice="auto",
-                turn_detection={
-                    "type": "server_vad",
-                    "threshold": 0.5,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500
-                }
+                input_audio_transcription={
+                    "model": "whisper-1"
+                },
+                turn_detection=None  # Use manual VAD mode to enable input transcription events
             )
 
             # Create connection manager

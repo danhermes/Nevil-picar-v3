@@ -121,15 +121,15 @@ configuration:
     reconnect_delay: 1.0
     connection_timeout: 30.0
 
-  # Audio capture settings (24kHz PCM16 for Realtime API)
+  # Audio capture settings (48kHz PCM16 for Realtime API - hardware compatible)
   audio:
-    sample_rate: 24000
+    sample_rate: 48000
     channel_count: 1
     echo_cancellation: true
     noise_suppression: true
     auto_gain_control: true
     buffer_size: 4096
-    chunk_size: 4800  # 200ms at 24kHz
+    chunk_size: 9600  # 200ms at 48kHz
 
   # Recognition settings
   recognition:

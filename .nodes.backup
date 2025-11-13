@@ -1,0 +1,26 @@
+# Nevil v2.2 Root Configuration
+# OpenAI Realtime API Integration
+version: "2.2"
+description: "Nevil v2.2 with OpenAI Realtime API (streaming STT/TTS)"
+
+system:
+  framework_version: "2.2.0"
+  log_level: "INFO"
+  health_check_interval: 5.0
+  shutdown_timeout: 10.0
+  startup_delay: 2.0
+
+environment:
+  NEVIL_VERSION: "2.2"
+  LOG_LEVEL: "INFO"
+  NEVIL_REALTIME_ENABLED: "true"
+
+launch:
+  # Phase 1: Realtime API nodes (streaming) + navigation + visual + LED indicator
+  startup_order: ["led_indicator", "speech_recognition_realtime", "speech_synthesis_realtime", "ai_cognition_realtime", "navigation", "visual"]
+  parallel_launch: false
+  wait_for_healthy: true
+  ready_timeout: 30.0
+
+# OpenAI API key will be loaded from system environment
+# Realtime API WebSocket connection managed by RealtimeConnectionManager

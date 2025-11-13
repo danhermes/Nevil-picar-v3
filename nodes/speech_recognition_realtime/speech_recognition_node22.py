@@ -10,8 +10,8 @@ Key Features:
 - Publishes to voice_command topic
 - Uses .messages configuration pattern
 - Integrates with RealtimeConnectionManager WebSocket
-- Handles response.audio_transcript.delta events
-- Streaming speech-to-text via OpenAI Realtime API
+- Handles conversation.item.input_audio_transcription.completed events
+- USER input speech-to-text via OpenAI Realtime API
 """
 
 import os
@@ -58,8 +58,8 @@ class SpeechRecognitionNode22(NevilNode):
     3. Publishes to voice_command topic
     4. Integrates audio_capture_manager for streaming audio
     5. Connects to OpenAI Realtime API via WebSocket
-    6. Handles response.audio_transcript.delta events
-    7. Accumulates streaming transcripts into final text
+    6. Handles conversation.item.input_audio_transcription.completed events
+    7. Processes USER INPUT transcriptions (not AI responses)
     """
 
     def __init__(self, config_path: str = None):
@@ -129,6 +129,7 @@ class SpeechRecognitionNode22(NevilNode):
             self.logger.info("Waiting for shared Realtime API connection from ai_cognition...")
 
             # Prepare audio config but don't start capture yet (need connection first)
+            # CRITICAL: NO device_index - let PyAudio use system default (v1.0/v2.0 approach)
             self.audio_config_prepared = AudioCaptureConfig(
                 sample_rate=self.audio_config.get('sample_rate', 24000),
                 channel_count=self.audio_config.get('channel_count', 1),
@@ -172,20 +173,16 @@ class SpeechRecognitionNode22(NevilNode):
         self.connection_manager = realtime_manager
 
         if self.connection_manager:
-            # Register event handlers for transcription
+            # Register event handlers for USER INPUT transcription (not AI response!)
             self.connection_manager.on(
-                "response.audio_transcript.delta",
-                self._on_transcript_delta
-            )
-            self.connection_manager.on(
-                "response.audio_transcript.done",
-                self._on_transcript_done
+                "conversation.item.input_audio_transcription.completed",
+                self._on_input_transcription_completed
             )
             self.connection_manager.on(
                 "error",
                 self._on_error_event
             )
-            self.logger.info("Registered transcript event handlers")
+            self.logger.info("Registered USER input transcription event handlers")
 
             # Now start audio capture with the real connection
             self.audio_capture = AudioCaptureManager(
@@ -206,57 +203,33 @@ class SpeechRecognitionNode22(NevilNode):
             self._publish_listening_status(True, "initialized")
             self.logger.info("Published listening status: active")
 
-    def _on_transcript_delta(self, event: Dict[str, Any]):
+    def _on_input_transcription_completed(self, event: Dict[str, Any]):
         """
-        Handle streaming transcript delta events from Realtime API
+        Handle USER INPUT audio transcription completion from Realtime API
 
         Event format:
         {
-            "type": "response.audio_transcript.delta",
-            "delta": "partial text..."
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "...",
+            "content_index": 0,
+            "transcript": "user's actual speech text"
         }
         """
         try:
-            delta = event.get("delta", "")
-            if not delta:
+            # Extract the USER's transcribed speech
+            transcript = event.get("transcript", "")
+
+            if not transcript or not transcript.strip():
+                self.logger.debug("Received empty input transcription, skipping")
                 return
 
-            with self.transcript_lock:
-                self.current_transcript += delta
-                self.last_transcript_time = time.time()
+            self.logger.info(f"✅ USER INPUT transcribed: '{transcript}'")
 
-            self.logger.debug(f"Transcript delta: '{delta}' (total: {len(self.current_transcript)} chars)")
-
-        except Exception as e:
-            self.logger.error(f"Error processing transcript delta: {e}")
-
-    def _on_transcript_done(self, event: Dict[str, Any]):
-        """
-        Handle final transcript completion event
-
-        Event format:
-        {
-            "type": "response.audio_transcript.done",
-            "transcript": "final complete text"
-        }
-        """
-        try:
-            # Get final transcript from event or use accumulated
-            final_transcript = event.get("transcript", "")
-
-            with self.transcript_lock:
-                if not final_transcript:
-                    final_transcript = self.current_transcript
-
-                # Process completed transcript
-                if final_transcript and final_transcript.strip():
-                    self._process_transcript(final_transcript.strip())
-
-                # Reset accumulator
-                self.current_transcript = ""
+            # Process the USER's speech
+            self._process_transcript(transcript.strip())
 
         except Exception as e:
-            self.logger.error(f"Error processing transcript completion: {e}")
+            self.logger.error(f"Error processing user input transcription: {e}")
 
     def _process_transcript(self, text: str):
         """
@@ -334,29 +307,22 @@ class SpeechRecognitionNode22(NevilNode):
         Callback from audio_capture_manager when audio data is ready
         Sends to Realtime API via WebSocket
 
-        CRITICAL: Must check microphone availability to prevent echo!
-        If Nevil is speaking or navigating, audio will contain self-feedback.
+        With Server VAD disabled, we control transcription via manual commits.
+        Audio is ALWAYS sent, but only committed (transcribed) when user finishes speaking.
         """
         try:
-            if not self.connection_manager or not self.is_listening:
+            if not self.connection_manager:
                 return
 
-            # CRITICAL: Check if microphone is available (not speaking/navigating)
-            # This prevents Nevil from hearing himself speak and creating feedback loops
-            if self.speaking_active:
-                # Don't log every single chunk - would spam logs
-                return
-
-            if not microphone_mutex.is_microphone_available():
-                # Microphone unavailable due to TTS or navigation
-                return
-
+            # With turn_detection=None, just send ALL audio - no mutex check here
+            # The VAD commit logic handles WHEN to transcribe
             # Send audio event to Realtime API
             event = {
                 "type": "input_audio_buffer.append",
                 "audio": base64_audio
             }
             self.connection_manager.send_sync(event)  # Thread-safe synchronous send
+            self.logger.debug("Sent audio chunk to Realtime API")
 
         except Exception as e:
             self.logger.error(f"Error sending audio data: {e}")
@@ -478,8 +444,8 @@ class SpeechRecognitionNode22(NevilNode):
             # Start/stop listening based on mode
             if mode == "listening" and not self.is_listening:
                 self._start_listening()
-            elif mode == "speaking" and self.is_listening:
-                self._stop_listening()
+            # elif mode == "speaking" and self.is_listening:
+            #     self._stop_listening()  # DISABLED: Mutex already handles audio blocking during TTS
             elif mode == "idle" and not self.is_listening:
                 self._start_listening()
 
@@ -494,21 +460,15 @@ class SpeechRecognitionNode22(NevilNode):
 
             self.logger.debug(f"Speaking status changed: {speaking}")
 
-            # Acquire/release microphone mutex to prevent feedback loop
+            # Simple solution: Stop listening when Nevil talks, resume when done
             if speaking:
-                microphone_mutex.acquire_noisy_activity("speaking")
-                self.logger.info("🔇 Microphone muted - system is speaking")
-            else:
-                microphone_mutex.release_noisy_activity("speaking")
-                self.logger.info("🎤 Microphone unmuted - system finished speaking")
-
-            # Pause listening during speech synthesis
-            if speaking and self.is_listening:
+                # Nevil is talking → STOP listening
                 self._stop_listening()
-                self.logger.info("Paused realtime STT - system is speaking")
-            elif not speaking and not self.is_listening and not self.navigation_active:
+                self.logger.info("🔇 Stopped listening - Nevil is speaking")
+            else:
+                # Nevil finished → START listening
                 self._start_listening()
-                self.logger.info("Resumed realtime STT - system finished speaking")
+                self.logger.info("🎤 Resumed listening - ready for user")
 
         except Exception as e:
             self.logger.error(f"Error handling speaking status change: {e}")
@@ -595,6 +555,42 @@ class SpeechRecognitionNode22(NevilNode):
             "reason": reason
         }
         self.publish("listening_status", status_data)
+
+    def _clear_audio_buffer(self):
+        """Clear the Realtime API input audio buffer to prevent feedback"""
+        try:
+            if self.connection_manager:
+                clear_event = {
+                    "type": "input_audio_buffer.clear"
+                }
+                self.connection_manager.send_sync(clear_event)
+                self.logger.debug("Cleared audio input buffer")
+        except Exception as e:
+            self.logger.error(f"Error clearing audio buffer: {e}")
+
+    def _cancel_response(self):
+        """Cancel any in-progress response to prevent feedback"""
+        try:
+            if self.connection_manager:
+                cancel_event = {
+                    "type": "response.cancel"
+                }
+                self.connection_manager.send_sync(cancel_event)
+                self.logger.debug("Cancelled in-progress response")
+        except Exception as e:
+            self.logger.debug(f"No response to cancel or error: {e}")
+
+    def _clear_audio_buffer(self):
+        """Clear the Realtime API input audio buffer to prevent feedback"""
+        try:
+            if self.connection_manager:
+                clear_event = {
+                    "type": "input_audio_buffer.clear"
+                }
+                self.connection_manager.send_sync(clear_event)
+                self.logger.info("🗑️  Cleared speech recognition audio buffer")
+        except Exception as e:
+            self.logger.debug(f"Error clearing audio buffer: {e}")
 
     def get_speech_stats(self) -> Dict[str, Any]:
         """

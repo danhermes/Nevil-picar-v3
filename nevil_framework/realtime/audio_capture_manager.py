@@ -49,9 +49,10 @@ class AudioCaptureConfig:
         chunk_size: int = 4800,
         buffer_size: int = 4096,
         device_index: Optional[int] = None,
-        vad_enabled: bool = False,
+        vad_enabled: bool = True,  # Enable VAD by default for manual commit mode
         vad_threshold: float = 0.02,
-        auto_flush_ms: int = 200
+        auto_flush_ms: int = 200,
+        speech_timeout_ms: int = 1500  # Commit after 1.5s of silence
     ):
         """
         Initialize audio capture configuration.
@@ -74,6 +75,7 @@ class AudioCaptureConfig:
         self.vad_enabled = vad_enabled
         self.vad_threshold = vad_threshold
         self.auto_flush_ms = auto_flush_ms
+        self.speech_timeout_ms = speech_timeout_ms
 
 
 class AudioCaptureCallbacks:
@@ -162,6 +164,10 @@ class AudioCaptureManager:
         self.vad_speech_active = False
         self.vad_silence_frames = 0
         self.vad_silence_threshold = 10  # Frames of silence to trigger speech_end
+
+        # Commit cooldown (prevent rapid re-commits that cause empty buffer errors)
+        self.last_commit_time = 0
+        self.commit_cooldown = 2.0  # 2 seconds between commits
 
         # Auto-flush timer
         self.last_flush_time = time.time()
@@ -358,6 +364,18 @@ class AudioCaptureManager:
         Converts buffered samples to PCM16, encodes to base64,
         and sends via callback or connection manager.
         """
+        # ⚠️ CRITICAL: Check mutex BEFORE flushing
+        # Don't send buffered audio if TTS is active
+        from nevil_framework.microphone_mutex import microphone_mutex
+        if not microphone_mutex.is_microphone_available():
+            # Mutex blocked - clear buffer and return without sending
+            with self.buffer_lock:
+                if self.audio_buffer:
+                    self.audio_buffer.clear()
+                    self.buffer_length = 0
+                    self.logger.debug("🚫 Flush cancelled - mutex blocked, buffer cleared")
+            return
+
         with self.buffer_lock:
             if self.buffer_length == 0:
                 self.logger.debug("No audio to flush (buffer empty)")
@@ -521,6 +539,13 @@ class AudioCaptureManager:
                     # LOG EVERY AUDIO SIGNAL (even if quiet)
                     self.logger.info(f"🎤 MIC SIGNAL: volume={volume_level:.4f}, samples={len(audio_float32)}")
 
+                    # ⚠️ CRITICAL: Check mutex BEFORE doing ANYTHING with audio
+                    # If Nevil is speaking, skip ALL processing - don't buffer, don't send, nothing
+                    from nevil_framework.microphone_mutex import microphone_mutex
+                    if not microphone_mutex.is_microphone_available():
+                        # Mutex blocked - discard this audio chunk entirely
+                        continue
+
                     # Volume change callback
                     if self.callbacks.on_volume_change:
                         self.callbacks.on_volume_change(volume_level)
@@ -535,8 +560,14 @@ class AudioCaptureManager:
                         self.buffer_length += len(audio_float32)
                         self.total_samples_processed += len(audio_float32)
 
+                        # ✅ PROOF: Audio successfully buffered during speech
+                        if self.vad_speech_active:
+                            self.logger.info(f"✅ BUFFERED during speech: {len(audio_float32)} samples, buffer_length={self.buffer_length}")
+
                     # Process when we have enough data
                     if self.buffer_length >= self.config.chunk_size:
+                        if self.vad_speech_active:
+                            self.logger.info(f"🔥 CALLING _process_audio_chunk during speech! buffer_length={self.buffer_length}")
                         self._process_audio_chunk()
 
                     # Auto-flush check (prevent buffer from growing too large)
@@ -560,8 +591,23 @@ class AudioCaptureManager:
 
     def _process_audio_chunk(self) -> None:
         """Process buffered audio chunk and send."""
+        self.logger.debug(f"📦 _process_audio_chunk called, buffer_length={self.buffer_length}")
+
+        # ⚠️ CRITICAL: Check mutex BEFORE processing buffered audio
+        # This prevents sending already-buffered audio when TTS starts mid-buffer
+        from nevil_framework.microphone_mutex import microphone_mutex
+        if not microphone_mutex.is_microphone_available():
+            # Mutex blocked - clear buffer and return without sending
+            with self.buffer_lock:
+                if self.audio_buffer:
+                    self.audio_buffer.clear()
+                    self.buffer_length = 0
+                    self.logger.debug("🚫 Buffered audio discarded - mutex blocked during chunk processing")
+            return
+
         with self.buffer_lock:
             if self.buffer_length < self.config.chunk_size:
+                self.logger.debug(f"⏸️  Buffer too small ({self.buffer_length} < {self.config.chunk_size}), waiting for more audio")
                 return
 
             try:
@@ -610,6 +656,21 @@ class AudioCaptureManager:
         Args:
             volume_level: Current volume level (0.0-1.0)
         """
+        # ⚠️ CRITICAL FIX: Check mutex BEFORE processing VAD
+        # If Nevil is speaking, skip VAD entirely AND clear buffers
+        from nevil_framework.microphone_mutex import microphone_mutex
+        if not microphone_mutex.is_microphone_available():
+            # Mutex blocked - reset VAD state, clear buffer, skip processing
+            if self.vad_speech_active:
+                self.vad_speech_active = False
+                self.vad_silence_frames = 0
+                # CRITICAL: Clear audio buffer to prevent committing Nevil's speech later
+                with self.buffer_lock:
+                    self.audio_buffer.clear()
+                    self.buffer_length = 0
+                self.logger.debug("🚫 VAD disabled + buffer cleared - mutex blocked (Nevil speaking)")
+            return
+
         speech_detected = volume_level > self.config.vad_threshold
 
         if speech_detected:
@@ -631,7 +692,66 @@ class AudioCaptureManager:
                     # Speech ended
                     self.vad_speech_active = False
                     self.vad_silence_frames = 0
-                    self.logger.debug("VAD: Speech ended")
+
+                    # ⚠️ CRITICAL: Cooldown check to prevent rapid re-commits
+                    # Realtime API clears buffer after commit, so rapid commits cause empty buffer errors
+                    time_since_last_commit = time.time() - self.last_commit_time
+                    if time_since_last_commit < self.commit_cooldown:
+                        self.logger.debug(f"VAD: Speech ended but cooldown active ({time_since_last_commit:.1f}s < {self.commit_cooldown}s) - skipping commit")
+                        if self.callbacks.on_vad_speech_end:
+                            self.callbacks.on_vad_speech_end()
+                        return
+
+                    # Check if Nevil is speaking (mutex blocks microphone during TTS)
+                    # If TTS is speaking, this "speech" is probably Nevil hearing himself
+                    from nevil_framework.microphone_mutex import microphone_mutex
+                    if not microphone_mutex.is_microphone_available():
+                        self.logger.info("VAD: Speech ended but mutex blocked - NOT committing (preventing feedback loop)")
+                        if self.callbacks.on_vad_speech_end:
+                            self.callbacks.on_vad_speech_end()
+                        return
+
+                    self.logger.info("VAD: Speech ended - committing audio for transcription")
+
+                    # ⚠️ CRITICAL: Commit audio buffer and request response (manual mode without Server VAD)
+                    # With turn_detection=None, we must manually:
+                    # 1. Wait for audio to be processed by API
+                    # 2. Commit the audio buffer
+                    # 3. Request a response
+                    if self.connection_manager:
+                        try:
+                            # ⚠️ CRITICAL FIX: Add delay to allow API to process audio chunks
+                            # Race condition: WebSocket sends are async, but commit is sync
+                            # Audio chunks may not be in API buffer yet when commit arrives
+                            # 200ms delay ensures audio has time to reach and be processed by API
+                            import time as time_module
+                            time_module.sleep(0.2)  # 200ms delay
+                            self.logger.debug("⏱️  Waited 200ms for API to process audio chunks")
+
+                            # Step 1: Commit audio
+                            commit_event = {"type": "input_audio_buffer.commit"}
+                            self.connection_manager.send_sync(commit_event)
+                            self.last_commit_time = time.time()  # Update cooldown timer
+                            self.logger.debug("Committed audio buffer to Realtime API")
+
+                            # Step 2: Request transcription + response (ONE response.create for everything)
+                            # With manual VAD (turn_detection=None), we must explicitly request response
+                            response_event = {
+                                "type": "response.create",
+                                "response": {
+                                    "modalities": ["text", "audio"]  # Generate BOTH text and audio in ONE response
+                                }
+                            }
+                            self.connection_manager.send_sync(response_event)
+                            self.logger.debug("Requested text+audio response - will flow to ai_node22 and speech_synthesis via events")
+
+                            # DON'T acquire mutex here - let speech_synthesis handle it
+                            # speech_synthesis will acquire when it receives the first audio chunk
+                            # and release after playback completes (same key = proper pairing)
+
+                        except Exception as e:
+                            self.logger.error(f"Error committing audio buffer: {e}")
+
                     if self.callbacks.on_vad_speech_end:
                         self.callbacks.on_vad_speech_end()
 
@@ -643,6 +763,7 @@ class AudioCaptureManager:
             base64_audio: Base64-encoded PCM16 audio
         """
         if not self.connection_manager:
+            self.logger.error("❌ Cannot send audio - no connection_manager!")
             return
 
         try:
@@ -651,6 +772,7 @@ class AudioCaptureManager:
                 "audio": base64_audio
             }
             self.connection_manager.send_sync(event)  # Thread-safe synchronous send
+            self.logger.debug("Sent audio chunk to Realtime API")
 
         except Exception as e:
             self.logger.error(f"Error sending audio to Realtime API: {e}")
@@ -685,7 +807,10 @@ class AudioCaptureManager:
         Returns:
             PCM16 bytes (16-bit signed integers)
         """
-        # Clamp to valid range
+        # Apply software gain (4x amplification for better sensitivity)
+        audio_data = audio_data * 4.0
+
+        # Clamp to valid range to prevent clipping
         audio_data = np.clip(audio_data, -1.0, 1.0)
 
         # Convert to int16

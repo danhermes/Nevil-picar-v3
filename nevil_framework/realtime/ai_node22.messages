@@ -53,7 +53,7 @@ configuration:
   # Realtime API settings
   realtime:
     model: "gpt-4o-realtime-preview-2024-12-17"
-    voice: "cedar"
+    voice: "echo"
     temperature: 0.8
     modalities: ["text", "audio"]
 

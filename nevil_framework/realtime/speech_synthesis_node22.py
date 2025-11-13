@@ -112,6 +112,7 @@ class SpeechSynthesisNode22(NevilNode):
         self.is_speaking = False
         self.current_text = ""
         self.speaking_lock = threading.Lock()
+        self.mutex_acquired = False  # CRITICAL FIX: Initialize mutex flag
 
         # Performance tracking
         self.synthesis_count = 0
@@ -208,6 +209,8 @@ class SpeechSynthesisNode22(NevilNode):
         Buffer it in memory - do NOT play yet.
 
         ⚠️ CRITICAL: This only buffers - playback uses robot_hat.Music() later
+
+        Note: Mutex should already be acquired in on_text_response() before this is called
         """
         try:
             # Extract base64 encoded audio chunk
@@ -221,6 +224,11 @@ class SpeechSynthesisNode22(NevilNode):
             # Add to buffer
             with self.buffer_lock:
                 self.audio_buffer.append(audio_chunk)
+
+            # Mutex should already be acquired by audio_capture_manager
+            # Just verify it's active
+            if not self.mutex_acquired:
+                self.logger.warning("⚠️  mutex_acquired flag not set - audio may have feedback risk")
 
             self.logger.debug(f"Buffered audio chunk: {len(audio_chunk)} bytes (total: {sum(len(c) for c in self.audio_buffer)} bytes)")
 
@@ -255,6 +263,7 @@ class SpeechSynthesisNode22(NevilNode):
 
         ⚠️ CRITICAL: This is where we use EXISTING playback method (robot_hat.Music())
         """
+        self.logger.info("🔥 _on_audio_done HANDLER CALLED - About to acquire mutex and play audio")
         try:
             processing_start = time.time()
 
@@ -291,17 +300,22 @@ class SpeechSynthesisNode22(NevilNode):
 
             self.logger.info(f"Saved audio to: {wav_file} ({save_time*1000:.1f}ms)")
 
-            # 4. Acquire microphone mutex for playback
-            microphone_mutex.acquire_noisy_activity("speaking")
+            # 4. Microphone mutex already acquired in on_text_response (before audio generation)
+            # No need to acquire again here
 
             try:
                 with self.speaking_lock:
                     self.is_speaking = True
                     self.current_text = transcript
 
-                # Publish speaking status
+                # Publish speaking status (if not already done in on_text_response)
                 voice = self.tts_config.get("default_voice", "alloy")
-                self._publish_speaking_status(True, transcript, voice)
+                if not self.mutex_acquired:
+                    # Fallback: if somehow mutex wasn't acquired yet
+                    from nevil_framework.microphone_mutex import microphone_mutex
+                    microphone_mutex.acquire_noisy_activity("speaking")
+                    self.mutex_acquired = True
+                    self._publish_speaking_status(True, transcript, voice)
 
                 # 5. ⚠️ CRITICAL: Use EXACT existing playback method
                 # This is the SAME code path as v3.0 speech_synthesis_node
@@ -359,20 +373,24 @@ class SpeechSynthesisNode22(NevilNode):
                     self.is_speaking = False
                     self.current_text = ""
 
-                # Log sleep delay (audio buffer clearing time)
+                # Log sleep delay (brief delay for acoustic echo suppression)
                 with self.chat_logger.log_step(
                     conversation_id, "sleep",
                     input_text="post_tts_delay",
-                    metadata={"reason": "audio_buffer_clear", "delay_ms": 1000}
+                    metadata={"reason": "acoustic_echo_suppression", "delay_ms": 500}
                 ) as sleep_log:
-                    time.sleep(1.0)
+                    time.sleep(0.5)
                     sleep_log["output_text"] = "delay_complete"
 
                 # Publish speaking status
                 self._publish_speaking_status(False, "", "")
 
-                # Release microphone mutex
-                microphone_mutex.release_noisy_activity("speaking")
+                # Release microphone mutex and reset flag
+                if self.mutex_acquired:
+                    from nevil_framework.microphone_mutex import microphone_mutex
+                    microphone_mutex.release_noisy_activity("speaking")
+                    self.mutex_acquired = False
+                    self.logger.info("🎤 Microphone unmuted - TTS complete")
 
         except Exception as e:
             self.logger.error(f"Error in audio done handler: {e}", exc_info=True)
@@ -381,7 +399,10 @@ class SpeechSynthesisNode22(NevilNode):
             # Ensure cleanup on error
             with self.speaking_lock:
                 self.is_speaking = False
-            microphone_mutex.release_noisy_activity("speaking")
+            if self.mutex_acquired:
+                from nevil_framework.microphone_mutex import microphone_mutex
+                microphone_mutex.release_noisy_activity("speaking")
+                self.mutex_acquired = False
 
     def _on_response_done(self, event: Dict[str, Any]):
         """Response fully complete - cleanup"""
@@ -473,20 +494,34 @@ class SpeechSynthesisNode22(NevilNode):
 
             self.logger.info(f"Requesting TTS from Realtime API: '{text[:50]}'... (voice: {voice})")
 
-            # Send to Realtime API for audio generation
-            # The response will come back via response.audio.delta events
-            if self.realtime_manager:
-                self.realtime_manager.send_event({
-                    "type": "response.create",
-                    "response": {
-                        "modalities": ["audio", "text"],
-                        "instructions": f"Say: {text}",
-                        "voice": voice,
-                        "output_audio_format": "pcm16"
-                    }
-                })
-            else:
-                self.logger.error("No realtime_manager available for TTS request")
+            # ⚠️ CRITICAL: Acquire mutex IMMEDIATELY when we receive text response
+            # This prevents VAD from detecting Nevil's upcoming speech
+            from nevil_framework.microphone_mutex import microphone_mutex
+
+            if not self.mutex_acquired:
+                microphone_mutex.acquire_noisy_activity("speaking")
+                self.mutex_acquired = True
+                self.logger.info("🔇 Microphone muted (acquired 'speaking') - preparing for TTS")
+
+            # DON'T clear the input buffer here - mutex already blocks new audio
+            # Clearing during response generation might interfere with the API
+
+            # Publish speaking status to notify other nodes
+            self._publish_speaking_status(True, text, voice)
+            self.logger.info("📢 Published speaking_status=True BEFORE TTS request")
+
+            # 4. ⚠️ CRITICAL FIX: DO NOT call response.create here!
+            # Calling response.create creates a NEW conversation turn, which triggers
+            # another text_response, which calls this handler again → INFINITE LOOP!
+            #
+            # Instead: The audio should already be generated by ai_node22.py's original
+            # response.create call (which has modalities: ["text", "audio"]).
+            # If audio is needed separately, use a TTS API call, not response.create.
+            #
+            # For now: Log that we received the text response
+            # The audio generation will be handled by the response.audio.delta events
+            # from the ORIGINAL response.create call in ai_node22.py
+            self.logger.info(f"📝 Text response received for TTS: '{text[:50]}'...")
 
         except Exception as e:
             self.logger.error(f"Error handling text response: {e}")
