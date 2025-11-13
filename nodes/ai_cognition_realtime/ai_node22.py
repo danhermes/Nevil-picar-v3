@@ -244,7 +244,8 @@ class AiNode22(NevilNode):
         self.connection_manager.on('response.audio.delta', self._on_response_audio_delta)
         self.connection_manager.on('response.audio.done', self._on_response_audio_done)
 
-        # Function calling events
+        # Function calling events - CRITICAL: output_item.added contains the function name!
+        self.connection_manager.on('response.output_item.added', self._on_output_item_added)
         self.connection_manager.on('response.function_call_arguments.delta', self._on_function_args_delta)
         self.connection_manager.on('response.function_call_arguments.done', self._on_function_args_done)
 
@@ -339,18 +340,71 @@ class AiNode22(NevilNode):
     # Function Calling Event Handlers
     # ========================================================================
 
-    def _on_function_args_delta(self, event):
-        """Handle streaming function call arguments delta"""
+    def _on_output_item_added(self, event):
+        """
+        Handle output item added - this contains the function name!
+
+        Event format:
+        {
+            "type": "response.output_item.added",
+            "item": {
+                "id": "...",
+                "type": "function_call",
+                "call_id": "...",
+                "name": "move_forward",  # ← THE FUNCTION NAME IS HERE!
+                "arguments": ""
+            }
+        }
+        """
         try:
-            if not self.current_function_call:
+            item = event.get('item', {})
+            item_type = item.get('type', '')
+
+            self.logger.info(f"📋 Output item added: type={item_type}")
+
+            # If it's a function call, initialize our tracking
+            if item_type == 'function_call':
+                function_name = item.get('name', '')
+                call_id = item.get('call_id', '')
+
+                self.logger.info(f"🎯 Function call starting: {function_name} (call_id={call_id})")
+
+                # Initialize function call tracking
                 self.current_function_call = {
-                    "name": event.get('name', ''),
-                    "call_id": event.get('call_id', ''),
+                    "name": function_name,
+                    "call_id": call_id,
                     "arguments": ""
                 }
 
+        except Exception as e:
+            self.logger.error(f"Error handling output item added: {e}")
+
+    def _on_function_args_delta(self, event):
+        """
+        Handle streaming function call arguments delta
+
+        Event format:
+        {
+            "type": "response.function_call_arguments.delta",
+            "call_id": "...",
+            "delta": "{\"distance\""  # Streaming JSON chunks
+        }
+
+        NOTE: This event does NOT contain the function name!
+        The name comes from response.output_item.added earlier.
+        """
+        try:
+            # Get the delta
             delta = event.get('delta', '')
+
+            # If we don't have a current call initialized, something is wrong
+            if not self.current_function_call:
+                self.logger.warning(f"⚠️ Received function args delta but no current_function_call! Delta: {delta}")
+                return
+
+            # Append the argument delta
             self.current_function_call['arguments'] += delta
+            self.logger.debug(f"📝 Function args delta: {len(delta)} chars (total: {len(self.current_function_call['arguments'])})")
 
         except Exception as e:
             self.logger.error(f"Error handling function args delta: {e}")
@@ -376,6 +430,7 @@ class AiNode22(NevilNode):
 
             # Execute function
             result = self._execute_function(function_name, args)
+            self.logger.info(f"🎬 Function execution result: {result}")
 
             # Send function output back to API
             if self.connection_manager:
@@ -397,18 +452,24 @@ class AiNode22(NevilNode):
     def _execute_function(self, function_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a function call"""
         try:
+            self.logger.info(f"🎬 Executing function: {function_name} with args: {args}")
+
             # Handle camera snapshot
             if function_name == "take_snapshot":
+                self.logger.info("📸 Handling camera snapshot")
                 return self._handle_take_snapshot()
 
             # Handle movement commands
             if function_name in ["move_forward", "move_backward", "turn_left", "turn_right", "stop_movement"]:
+                self.logger.info(f"🚗 Handling movement: {function_name}")
                 return self._handle_movement(function_name, args)
 
             # Handle gesture from library
             if function_name in self.gesture_functions:
+                self.logger.info(f"🤖 Handling gesture: {function_name}")
                 return self._handle_gesture(function_name, args)
 
+            self.logger.warning(f"❌ Unknown function: {function_name}")
             return {"status": "error", "message": f"Unknown function: {function_name}"}
 
         except Exception as e:
