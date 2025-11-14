@@ -94,6 +94,26 @@ subscribes:
         required: true
         allowed: ["listening", "speaking", "thinking", "idle", "error"]
 
+  - topic: "sound_effect"
+    message_type: "SoundEffect"
+    callback: "on_sound_effect"
+    description: "Sound effect playback requests"
+    schema:
+      effect:
+        type: "string"
+        required: true
+        description: "Sound effect name"
+      volume:
+        type: "integer"
+        required: false
+        default: 100
+        description: "Volume (0-100)"
+      priority:
+        type: "integer"
+        required: false
+        default: 30
+        description: "Playback priority"
+
 # Node configuration
 configuration:
   # Audio output settings - v1.0 EXACT Music() usage

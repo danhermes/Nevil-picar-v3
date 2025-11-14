@@ -50,7 +50,7 @@ class AiNode22(NevilNode):
     """
 
     def __init__(self):
-        super().__init__("ai_node22")
+        super().__init__("ai_cognition_realtime")
 
         # Chat logger for performance tracking
         self.chat_logger = get_chat_logger()
@@ -60,10 +60,13 @@ class AiNode22(NevilNode):
         self.ai_config = config.get('ai', {})
         self.realtime_config = config.get('realtime', {})
 
-        # Realtime API settings
-        self.model = self.realtime_config.get('model', 'gpt-4o-realtime-preview-2024-12-17')
-        self.voice = self.realtime_config.get('voice', 'alloy')
-        self.temperature = self.realtime_config.get('temperature', 0.8)
+        # Realtime API settings (with environment variable overrides)
+        self.model = os.getenv('NEVIL_REALTIME_MODEL',
+                              self.realtime_config.get('model', 'gpt-4o-realtime-preview-2024-12-17'))
+        self.voice = os.getenv('NEVIL_REALTIME_VOICE',
+                              self.realtime_config.get('voice', 'alloy'))
+        self.temperature = float(os.getenv('NEVIL_REALTIME_TEMPERATURE',
+                                          self.realtime_config.get('temperature', 0.8)))
         self.modalities = self.realtime_config.get('modalities', ['text', 'audio'])
 
         # Get system instructions from config
@@ -105,12 +108,12 @@ class AiNode22(NevilNode):
             self.gesture_functions = {}
             self.gesture_definitions = []
 
-            # Get all gesture function names (106 gestures)
+            # Get all gesture function names (exclude sound functions - they're handled separately)
             gesture_names = [
                 name for name in dir(extended_gestures)
                 if callable(getattr(extended_gestures, name))
                 and not name.startswith('_')
-                and name not in ['time', 'Enum', 'GestureSpeed']
+                and name not in ['time', 'Enum', 'GestureSpeed', 'play_sound', 'honk', 'rev_engine']
             ]
 
             for gesture_name in gesture_names:
@@ -165,7 +168,60 @@ class AiNode22(NevilNode):
                 "parameters": {"type": "object", "properties": {}}
             })
 
-            self.logger.info(f"Loaded {len(self.gesture_functions)} gestures + movement + camera functions")
+            # Add sound effect functions with proper parameters
+            sound_effects = {
+                "honk": "Honk the car horn",
+                "rev_engine": "Rev the car engine",
+                "airhorn": "Blast an air horn",
+                "train_horn": "Sound a train horn",
+                "wolf_howl": "Howl like a wolf",
+                "ghost": "Make spooky ghost sounds",
+                "alien_voice": "Alien voice effects",
+                "dubstep": "Play dubstep music",
+                "reggae": "Play reggae music",
+                "machine_gun": "Machine gun sound effect"
+            }
+
+            # Add play_sound function with sound_name parameter
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "play_sound",
+                "description": f"Play a sound effect. Available sounds: {', '.join(sound_effects.keys())}",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "sound_name": {
+                            "type": "string",
+                            "enum": list(sound_effects.keys()),
+                            "description": "Name of the sound to play: " + ", ".join([f"{k} ({v})" for k, v in sound_effects.items()])
+                        },
+                        "volume": {
+                            "type": "number",
+                            "description": "Volume 0-100",
+                            "default": 100
+                        }
+                    },
+                    "required": ["sound_name"]
+                }
+            })
+
+            # Add honk as standalone function
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "honk",
+                "description": "Honk the car horn - quick shortcut for play_sound('honk')",
+                "parameters": {"type": "object", "properties": {}}
+            })
+
+            # Add rev_engine as standalone function
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "rev_engine",
+                "description": "Rev the car engine - quick shortcut for play_sound('rev_engine')",
+                "parameters": {"type": "object", "properties": {}}
+            })
+
+            self.logger.info(f"Loaded {len(self.gesture_functions)} gestures + movement + camera + sounds")
 
         except Exception as e:
             self.logger.error(f"Failed to load gesture library: {e}")
@@ -194,6 +250,7 @@ class AiNode22(NevilNode):
             )
 
             # Create session configuration with function calling
+            # CRITICAL: turn_detection=None to use our local VAD and enable input transcription events
             session_config = SessionConfig(
                 model=self.model,
                 modalities=self.modalities,
@@ -202,12 +259,11 @@ class AiNode22(NevilNode):
                 temperature=self.temperature,
                 tools=self.gesture_definitions,
                 tool_choice="auto",
-                turn_detection={
-                    "type": "server_vad",
-                    "threshold": 0.5,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500
-                }
+                input_audio_transcription={
+                    "model": "whisper-1",
+                    "language": "en"  # Force English transcription
+                },
+                turn_detection=None  # Use manual VAD mode to enable input transcription events
             )
 
             # Create connection manager
@@ -431,6 +487,7 @@ class AiNode22(NevilNode):
 
             # Execute function
             result = self._execute_function(function_name, args)
+            self.logger.info(f"🎬 Function execution result: {result}")
 
             # Send function output back to API
             if self.connection_manager:
@@ -452,18 +509,29 @@ class AiNode22(NevilNode):
     def _execute_function(self, function_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a function call"""
         try:
+            self.logger.info(f"🎬 Executing function: {function_name} with args: {args}")
+
             # Handle camera snapshot
             if function_name == "take_snapshot":
+                self.logger.info("📸 Handling camera snapshot")
                 return self._handle_take_snapshot()
 
             # Handle movement commands
             if function_name in ["move_forward", "move_backward", "turn_left", "turn_right", "stop_movement"]:
+                self.logger.info(f"🚗 Handling movement: {function_name}")
                 return self._handle_movement(function_name, args)
+
+            # Handle sound functions
+            if function_name in ["play_sound", "honk", "rev_engine"]:
+                self.logger.info(f"🔊 Handling sound: {function_name}")
+                return self._handle_gesture(function_name, args)
 
             # Handle gesture from library
             if function_name in self.gesture_functions:
+                self.logger.info(f"🤖 Handling gesture: {function_name}")
                 return self._handle_gesture(function_name, args)
 
+            self.logger.warning(f"❌ Unknown function: {function_name}")
             return {"status": "error", "message": f"Unknown function: {function_name}"}
 
         except Exception as e:
@@ -473,11 +541,27 @@ class AiNode22(NevilNode):
     def _handle_gesture(self, gesture_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a gesture and return result"""
         try:
-            speed = args.get('speed', 'med')
+            # Handle play_sound specially - needs sound_name parameter
+            if gesture_name == "play_sound":
+                sound_name = args.get('sound_name', 'honk')
+                volume = args.get('volume', 100)
+                action_string = f"play_sound {sound_name} {volume}"
+                self.logger.info(f"🔊 Sound action: {action_string}")
+
+            # Handle honk and rev_engine - simple sounds
+            elif gesture_name in ["honk", "rev_engine"]:
+                action_string = gesture_name
+                self.logger.info(f"🔊 Simple sound: {action_string}")
+
+            # Handle regular gestures - use speed parameter
+            else:
+                speed = args.get('speed', 'med')
+                action_string = f"{gesture_name}:{speed}"
+                self.logger.info(f"🤖 Gesture action: {action_string}")
 
             # Publish robot action
             robot_action_data = {
-                "actions": [f"{gesture_name}:{speed}"],
+                "actions": [action_string],
                 "source_text": "realtime_api_function_call",
                 "mood": "neutral",
                 "priority": 100,
@@ -485,8 +569,8 @@ class AiNode22(NevilNode):
             }
 
             if self.publish("robot_action", robot_action_data):
-                self.logger.info(f"Executed gesture: {gesture_name}:{speed}")
-                return {"status": "success", "gesture": gesture_name, "speed": speed}
+                self.logger.info(f"✓ Executed action: {action_string}")
+                return {"status": "success", "action": action_string}
             else:
                 return {"status": "error", "message": "Failed to publish gesture"}
 
@@ -731,3 +815,6 @@ class AiNode22(NevilNode):
             stats["event_stats"] = self.connection_manager.get_event_stats()
 
         return stats
+
+# Alias for launcher compatibility
+AiCognitionRealtimeNode = AiNode22

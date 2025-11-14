@@ -601,6 +601,44 @@ actions_dict = {
 actions_dict = register_extended(actions_dict)
 print(f"[NAVIGATION] Registered extended gestures: {len(actions_dict)} actions")
 
+# Sound effect mappings for play_sound() function
+# Maps sound names to filenames in /home/dan/Nevil-picar-v3/audio/sounds/
+SOUND_MAPPINGS = {
+    # Vehicle sounds
+    "honk": "car-double-horn.wav",
+    "rev_engine": "car-start-engine.wav",
+    "engine_start": "car-start-engine.wav",
+
+    # Horn sounds
+    "airhorn": "airhorn-fx-343682.mp3",
+    "train_horn": "train-horn-337875.mp3",
+    "dj_airhorn": "dj-airhorn-sound-39405.mp3",
+
+    # Halloween/spooky sounds
+    "wolf_howl": "sound-effect-halloween-wolf-howling-253243.mp3",
+    "ghost": "ghost-voice-halloween-moany-ghost-168411.mp3",
+    "creepy_laugh": "scary-female-halloween-horror-laughter-vol-006-165223.mp3",
+    "creepy_bell": "creepy-halloween-bell-trap-melody-247720.mp3",
+
+    # Alien sounds
+    "alien_high": "alien-high-pitch-312010.mp3",
+    "alien_voice": "alien-voice-102709.mp3",
+    "eerie_horn": "eerie-alien-horn-82052.mp3",
+
+    # Music/effects
+    "agent_theme": "agent-movie-music-inspired-by-james-bond-theme-30066.mp3",
+    "dubstep": "dubstep-75bpm-67136.mp3",
+    "dubstep_bass": "dubstep-bassline-datsik-style-61181.mp3",
+    "dubstep_wobble": "dubstep-wobble-140bpm-106360.mp3",
+    "reggae": "reggae-loop-75237.mp3",
+
+    # Action sounds
+    "machine_gun": "clean-machine-gun-burst-98224.mp3",
+    "horror_hit": "horror-hit-logo-142395.mp3",
+    "inception_horn": "inception-style-movie-horn-80358.mp3",
+    "shock_gasp": "shock-gasp-female-383751.mp3",
+}
+
 
 
 

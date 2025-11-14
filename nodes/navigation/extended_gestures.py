@@ -3216,6 +3216,55 @@ def come_on_then(car, speed='med'):
             pass
 
 
+def play_sound(car, sound_name=None, volume=100, speed='med'):
+    """Play a sound effect - generic sound player"""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not sound_name:
+        logger.warning("No sound name provided to play_sound")
+        return
+
+    logger.info(f"🔊 PLAY_SOUND action called: {sound_name} (volume: {volume})")
+
+    try:
+        # Check if we can publish sound effect message through navigation node
+        if hasattr(car, 'nav_node') and car.nav_node:
+            logger.info(f"Publishing sound effect request: {sound_name}")
+            car.nav_node.publish("sound_effect", {
+                "effect": sound_name,
+                "volume": volume,
+                "priority": 30
+            })
+            # Brief pause for sound to play
+            _sleep(1.0, speed)
+        else:
+            logger.warning(f"Cannot play {sound_name} - no navigation node reference for messaging")
+    except Exception as e:
+        logger.error(f"Error playing sound {sound_name}: {e}")
+    finally:
+        try:
+            car.stop()
+        except Exception:
+            pass
+
+
+def honk(car, speed='med'):
+    """Honk the horn - wrapper for play_sound"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("🚗 HONK action called")
+    play_sound(car, "honk", 100, speed)
+
+
+def rev_engine(car, speed='med'):
+    """Rev the engine - wrapper for play_sound"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("🏎️ REV_ENGINE action called")
+    play_sound(car, "rev_engine", 100, speed)
+
+
 # Build the EXTENDED_GESTURES dictionary mapping names to functions
 EXTENDED_GESTURES = {
     # OBSERVATION (15)
@@ -3341,6 +3390,11 @@ EXTENDED_GESTURES = {
     "dance_happy": dance_happy,
     "flirt": flirt,
     "come_on_then": come_on_then,
+
+    # SOUNDS (3)
+    "play_sound": play_sound,
+    "honk": honk,
+    "rev_engine": rev_engine,
 }
 
 def register_extended(actions_dict: dict) -> dict:

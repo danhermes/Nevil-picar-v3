@@ -545,6 +545,58 @@ class SpeechSynthesisNode22(NevilNode):
         except Exception as e:
             self.logger.error(f"Error handling system mode change: {e}")
 
+    def on_sound_effect(self, message):
+        """Handle sound effect playback requests (declaratively configured callback)"""
+        try:
+            effect = message.data.get("effect", "")
+            volume = message.data.get("volume", 100)
+            priority = message.data.get("priority", 30)
+
+            if not effect:
+                self.logger.warning("Received empty sound effect request")
+                return
+
+            self.logger.info(f"🔊 Playing sound effect: {effect} (volume: {volume})")
+
+            # Import sound mappings from action_helper
+            from nodes.navigation.action_helper import SOUND_MAPPINGS
+
+            # Map effect names to full sound file paths
+            sound_files = {
+                name: f"/home/dan/Nevil-picar-v3/audio/sounds/{filename}"
+                for name, filename in SOUND_MAPPINGS.items()
+            }
+
+            sound_file = sound_files.get(effect)
+            if not sound_file:
+                self.logger.error(f"Unknown sound effect: {effect}")
+                return
+
+            # Check if file exists
+            if not os.path.exists(sound_file):
+                self.logger.error(f"Sound file not found: {sound_file}")
+                return
+
+            # Play the sound using the audio output's Music() instance
+            if self.audio_output and self.audio_output.music:
+                # Use microphone mutex - allows parallel sounds+navigation but blocks speech recognition
+                microphone_mutex.acquire_noisy_activity("sound_effect")
+
+                try:
+                    self.audio_output.music.sound_play(sound_file, volume)
+                    # Wait for sound to finish
+                    while self.audio_output.music.pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+                    self.logger.info(f"✓ Sound effect completed: {effect}")
+                finally:
+                    # Release microphone mutex
+                    microphone_mutex.release_noisy_activity("sound_effect")
+            else:
+                self.logger.error("Audio output not available for sound effects")
+
+        except Exception as e:
+            self.logger.error(f"Error playing sound effect: {e}")
+
     def cleanup(self):
         """Cleanup speech synthesis resources"""
         self.logger.info("Cleaning up speech synthesis...")
