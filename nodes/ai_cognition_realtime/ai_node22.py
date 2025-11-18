@@ -81,6 +81,7 @@ class AiNode22(NevilNode):
         self.current_response_text = ""
         self.current_function_call = None
         self.current_conversation_id = None
+        self.response_in_progress = False  # Track if API is generating a response
 
         # Visual data storage
         self.latest_image: Optional[Dict[str, Any]] = None
@@ -333,6 +334,11 @@ class AiNode22(NevilNode):
         self.logger.error(f"Realtime API error: {error}")
         self.error_count += 1
 
+        # Clear response flag on error to prevent stuck state
+        if self.response_in_progress:
+            self.response_in_progress = False
+            self.logger.debug("🚦 Response flag cleared due to error")
+
     # ========================================================================
     # Response Streaming Event Handlers
     # ========================================================================
@@ -418,6 +424,12 @@ class AiNode22(NevilNode):
             item_type = item.get('type', '')
 
             self.logger.info(f"📋 Output item added: type={item_type}")
+
+            # Mark response as in progress when API starts generating ANY output
+            # This catches responses we didn't initiate (shouldn't happen, but defensive)
+            if not self.response_in_progress:
+                self.response_in_progress = True
+                self.logger.debug("🚦 Response flag set to in_progress (output_item_added)")
 
             # If it's a function call, initialize our tracking
             if item_type == 'function_call':
@@ -656,11 +668,15 @@ class AiNode22(NevilNode):
     def _on_response_done(self, event):
         """Handle complete response"""
         try:
-            self.logger.debug("Response cycle complete")
+            # Clear response in progress flag
+            self.response_in_progress = False
+            self.logger.debug("🚦 Response flag cleared - ready for next command")
             self._set_system_mode("idle", "response_done")
 
         except Exception as e:
             self.logger.error(f"Error handling response done: {e}")
+            # Ensure flag is cleared even on error
+            self.response_in_progress = False
 
     def _on_speech_started(self, event):
         """Handle user speech detected"""
@@ -690,6 +706,11 @@ class AiNode22(NevilNode):
 
             self.logger.info(f"Voice command: '{text}' (conf={confidence:.2f})")
 
+            # Check if response already in progress
+            if self.response_in_progress:
+                self.logger.warning(f"⏳ Response in progress, ignoring new command: '{text}'")
+                return
+
             # Send text to Realtime API (it will generate response)
             if self.connection_manager and self.connection_manager.is_connected():
                 # For text input, we create a conversation item
@@ -706,6 +727,10 @@ class AiNode22(NevilNode):
                         ]
                     }
                 })
+
+                # Mark response as in progress before triggering
+                self.response_in_progress = True
+                self.logger.debug("🚦 Response flag set to in_progress")
 
                 # Trigger response generation
                 self.connection_manager.send_sync({
@@ -736,8 +761,20 @@ class AiNode22(NevilNode):
 
                 self.logger.info(f"Received visual data: {capture_id}")
 
+                # Check if response already in progress
+                if self.response_in_progress:
+                    self.logger.warning(f"⏳ Response in progress, ignoring visual data: {capture_id}")
+                    return
+
                 # Send image to Realtime API for multimodal processing
                 if self.connection_manager and self.connection_manager.is_connected():
+                    # Format image data as data URL if it's base64
+                    if not image_data.startswith("data:"):
+                        # Assume JPEG if not specified
+                        image_url = f"data:image/jpeg;base64,{image_data}"
+                    else:
+                        image_url = image_data
+
                     self.connection_manager.send_sync({
                         "type": "conversation.item.create",
                         "item": {
@@ -745,12 +782,18 @@ class AiNode22(NevilNode):
                             "role": "user",
                             "content": [
                                 {
-                                    "type": "input_image",
-                                    "image": image_data
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_url
+                                    }
                                 }
                             ]
                         }
                     })
+
+                    # Mark response as in progress before triggering
+                    self.response_in_progress = True
+                    self.logger.debug("🚦 Response flag set to in_progress (visual)")
 
                     # Trigger vision response
                     self.connection_manager.send_sync({

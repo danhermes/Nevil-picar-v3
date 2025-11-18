@@ -59,6 +59,36 @@ class AudioOutput:
         # Ensure TTS directory exists
         ensure_tts_directory()
 
+        # DIAGNOSTIC: Log to same file as auto_sound_card
+        LOG_FILE = '/var/log/auto_sound_card.log'
+        try:
+            import subprocess
+            mixer_info = self.music.pygame.mixer.get_init()
+
+            with open(LOG_FILE, 'a') as f:
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                f.write(f"[{timestamp}] pygame.mixer initialized: {mixer_info}\n")
+
+                # Check card states
+                for card in [0, 1, 2]:
+                    card_names = ["HDMI0", "HDMI1", "HiFiBerry"]
+                    try:
+                        with open(f'/proc/asound/card{card}/pcm0p/sub0/status', 'r') as status:
+                            state_line = [line for line in status if 'state:' in line]
+                            if state_line:
+                                f.write(f"[{timestamp}] Card {card} ({card_names[card]}): {state_line[0].strip()}\n")
+                    except:
+                        pass
+
+                # Check which device is open
+                lsof_result = subprocess.run(['lsof', '/dev/snd/pcmC0D0p', '/dev/snd/pcmC1D0p', '/dev/snd/pcmC2D0p'],
+                                            capture_output=True, text=True, timeout=2)
+                if lsof_result.stdout:
+                    f.write(f"[{timestamp}] Open audio devices: {lsof_result.stdout.strip()}\n")
+
+        except Exception as e:
+            print(f"[AudioOutput] Could not log to {LOG_FILE}: {e}")
+
         print("[AudioOutput] Initialized with Music() - using defaults only")
 
     def generate_and_play_tts(self, message, openai_helper, volume_db=None, voice=None):

@@ -41,10 +41,27 @@ oswarning=( "Debian" "Kano" "Mate" "PiTop" "Ubuntu" ) # list experimental os-rel
 osdeny=( "Darwin" "Kali" ) # list os-releases specifically disallowed
 
 FORCE=$1
+NO_APLAY=false
 DEVICE_TREE=true
 ASK_TO_REBOOT=false
 CURRENT_SETTING=false
 UPDATE_DB=false
+
+# Parse arguments
+for arg in "$@"; do
+    case $arg in
+        -y)
+            FORCE='-y'
+            ;;
+        -n|--no-aplay)
+            NO_APLAY=true
+            ;;
+        -yn|-ny)
+            FORCE='-y'
+            NO_APLAY=true
+            ;;
+    esac
+done
 
 BOOTCMD=/boot/firmware/cmdline.txt
 CONFIG=/boot/firmware/config.txt
@@ -421,14 +438,20 @@ EOL
 sudo systemctl daemon-reload
 sudo systemctl disable aplay
 newline
-echo "You can optionally activate '/dev/zero' playback in"
-echo "the background at boot. This will remove all"
-echo "popping/clicking but does use some processor time."
-newline
-if confirm "Activate '/dev/zero' playback in background? [RECOMMENDED]"; then
-newline
-sudo systemctl enable aplay
-ASK_TO_REBOOT=true
+
+if ! $NO_APLAY; then
+    echo "You can optionally activate '/dev/zero' playback in"
+    echo "the background at boot. This will remove all"
+    echo "popping/clicking but does use some processor time."
+    newline
+    if confirm "Activate '/dev/zero' playback in background? [RECOMMENDED]"; then
+    newline
+    sudo systemctl enable aplay
+    ASK_TO_REBOOT=true
+    fi
+else
+    echo "Skipping aplay /dev/zero background playback (--no-aplay flag set)"
+    newline
 fi
 
 # config asound
@@ -444,15 +467,125 @@ if [ -e /etc/asound.conf ]; then
 fi
 
 # auto_sound_card scripts
+# This script will be installed to: /usr/local/bin/auto_sound_card
+# Logs the last 10 calls with BEFORE/AFTER state to: /var/log/auto_sound_card.log
+# To view log: cat /var/log/auto_sound_card.log
+# Each log entry shows:
+#   - BEFORE: Current asound.conf card, running card states, open audio devices
+#   - AFTER: Target configuration (card, volumes, mic settings)
 
 sudo cat > /usr/local/bin/auto_sound_card << '-EOF'
 #!/bin/bash
 
 ASOUND_CONF=/etc/asound.conf
 AUDIO_CARD_NAME="sndrpihifiberry"
+LOG_FILE=/var/log/auto_sound_card.log
 
+# Function to log calls with timestamp, card_num, card_name, mic info, and volumes
+# Maintains only the last 10 calls in /var/log/auto_sound_card.log
+# Log format: [YYYY-MM-DD HH:MM:SS] auto_sound_card called with card_num=N card_name=NAME speaker_vol=X% mic_card=M mic_device=D mic_name=MIC_NAME mic_vol=Y%
+log_call() {
+    local card_num=$1
+    local card_name=$2
+    local speaker_vol=$3
+    local mic_card=$4
+    local mic_device=$5
+    local mic_name=$6
+    local mic_vol=$7
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    # Log what was CURRENTLY in use before changes
+    echo "[$timestamp] === BEFORE CHANGES ===" >> $LOG_FILE
+
+    # Check current asound.conf card
+    if [ -f "$ASOUND_CONF" ]; then
+        current_card=$(grep "type hw card" $ASOUND_CONF 2>/dev/null | awk '{print $4}' | head -1)
+        if [ -n "$current_card" ]; then
+            current_card_name=$(aplay -l 2>/dev/null | grep "^card $current_card:" | awk -F'[\\[\\]]' '{print $2}')
+            echo "[$timestamp] Current asound.conf: card=$current_card name=$current_card_name" >> $LOG_FILE
+        else
+            echo "[$timestamp] Current asound.conf: not configured or invalid" >> $LOG_FILE
+        fi
+    else
+        echo "[$timestamp] Current asound.conf: does not exist" >> $LOG_FILE
+    fi
+
+    # Check which card devices are currently OPEN/RUNNING
+    for card in 0 1 2 3; do
+        if [ -f "/proc/asound/card$card/pcm0p/sub0/status" ]; then
+            card_state=$(grep "state:" /proc/asound/card$card/pcm0p/sub0/status 2>/dev/null | awk '{print $2}')
+            if [ "$card_state" = "RUNNING" ] || [ "$card_state" = "PREPARED" ]; then
+                card_info=$(aplay -l 2>/dev/null | grep "^card $card:" | awk -F'[\\[\\]]' '{print $2}')
+                echo "[$timestamp] Card $card ($card_info) state: $card_state" >> $LOG_FILE
+            fi
+        fi
+    done
+
+    # Check which processes have audio devices open
+    lsof_out=$(lsof /dev/snd/pcmC*D0p 2>/dev/null | tail -n +2)
+    if [ -n "$lsof_out" ]; then
+        echo "[$timestamp] Open audio devices:" >> $LOG_FILE
+        echo "$lsof_out" | while read line; do
+            echo "[$timestamp]   $line" >> $LOG_FILE
+        done
+    else
+        echo "[$timestamp] No audio devices currently open" >> $LOG_FILE
+    fi
+
+    echo "[$timestamp] === AFTER CHANGES (TARGET) ===" >> $LOG_FILE
+    echo "[$timestamp] Setting to: card_num=$card_num card_name=$card_name speaker_vol=$speaker_vol mic_card=$mic_card mic_device=$mic_device mic_name=$mic_name mic_vol=$mic_vol" >> $LOG_FILE
+
+    # Keep only last 10 entries (increased from 5 due to multi-line logging)
+    tail -n 10 $LOG_FILE > $LOG_FILE.tmp && mv $LOG_FILE.tmp $LOG_FILE
+}
+
+# Detect output sound card (speaker/DAC)
 card_num=$(sudo aplay -l |grep $AUDIO_CARD_NAME |awk '{print $2}'|tr -d ':')
+card_name=$(sudo aplay -l |grep $AUDIO_CARD_NAME |awk -F'[\\[\\]]' '{print $2}')
 echo "card_num=$card_num"
+echo "card_name=$card_name"
+
+# Get speaker volume (PCM control on the output card)
+if [ -n "$card_num" ]; then
+    speaker_vol=$(amixer -c $card_num get PCM 2>/dev/null | grep -oP '\d+%' | head -1)
+    if [ -z "$speaker_vol" ]; then
+        speaker_vol="N/A"
+    fi
+else
+    speaker_vol="N/A"
+fi
+echo "speaker_vol=$speaker_vol"
+
+# Detect microphone input device
+# Look for USB microphone first, then other input devices
+mic_info=$(sudo arecord -l 2>/dev/null | grep -E "card [0-9]:" | head -1)
+if [ -n "$mic_info" ]; then
+    mic_card=$(echo "$mic_info" | awk '{print $2}' | tr -d ':')
+    mic_device=$(echo "$mic_info" | awk '{print $6}' | tr -d ':')
+    mic_name=$(echo "$mic_info" | awk -F'[\\[\\]]' '{print $2}')
+
+    # Get microphone volume/capture level
+    # Try common capture control names: Mic, Capture, PCM Capture
+    mic_vol=$(amixer -c $mic_card get Mic 2>/dev/null | grep -oP '\d+%' | head -1)
+    if [ -z "$mic_vol" ]; then
+        mic_vol=$(amixer -c $mic_card get Capture 2>/dev/null | grep -oP '\d+%' | head -1)
+    fi
+    if [ -z "$mic_vol" ]; then
+        mic_vol="N/A"
+    fi
+else
+    mic_card="none"
+    mic_device="none"
+    mic_name="none"
+    mic_vol="N/A"
+fi
+echo "mic_card=$mic_card"
+echo "mic_device=$mic_device"
+echo "mic_name=$mic_name"
+echo "mic_vol=$mic_vol"
+
+# Log this call with both output and input info including volumes
+log_call "$card_num" "$card_name" "$speaker_vol" "$mic_card" "$mic_device" "$mic_name" "$mic_vol"
 if [ -n "$card_num" ]; then
     cat > $ASOUND_CONF << EOF
 pcm.speakerbonnet {
@@ -507,6 +640,13 @@ exit 0
 -EOF
 
 sudo chmod +x /usr/local/bin/auto_sound_card
+
+# stop and disable existing service if it exists
+if systemctl is-enabled --quiet auto_sound_card.service 2>/dev/null; then
+    echo "Stopping and disabling existing auto_sound_card service..."
+    sudo systemctl stop auto_sound_card.service
+    sudo systemctl disable auto_sound_card.service
+fi
 
 # execute the script once
 sudo /usr/local/bin/auto_sound_card 100

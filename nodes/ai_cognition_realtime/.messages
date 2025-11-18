@@ -54,7 +54,7 @@ configuration:
   realtime:
     model: "gpt-4o-realtime-preview-2024-12-17"
     voice: "echo"
-    temperature: 0.8
+    temperature: 0.7
     modalities: ["text", "audio"]
 
   # Processing settings

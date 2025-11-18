@@ -103,6 +103,7 @@ class SpeechRecognitionNode22(NevilNode):
         # Streaming state
         self.is_streaming = False
         self.stream_lock = threading.Lock()
+        self.buffer_cleared = False  # Track if we've cleared buffer during current mute
 
         # Performance tracking
         self.recognition_count = 0
@@ -314,8 +315,27 @@ class SpeechRecognitionNode22(NevilNode):
             if not self.connection_manager:
                 return
 
-            # With turn_detection=None, just send ALL audio - no mutex check here
-            # The VAD commit logic handles WHEN to transcribe
+            # Check microphone mutex - don't send audio during TTS or navigation
+            # This prevents ambient noise from being transcribed during Nevil's speech
+            if not microphone_mutex.is_microphone_available():
+                active = microphone_mutex.get_active_activities()
+                self.logger.debug(f"🔇 Skipping audio chunk - noisy activities: {active}")
+
+                # Clear the input buffer ONCE to prevent stale audio from being transcribed
+                # when TTS finishes
+                if not self.buffer_cleared:
+                    self.connection_manager.send_sync({
+                        "type": "input_audio_buffer.clear"
+                    })
+                    self.buffer_cleared = True
+                    self.logger.info("🗑️  Cleared input audio buffer during TTS")
+                return
+
+            # Reset buffer cleared flag when mic becomes available again
+            if self.buffer_cleared:
+                self.buffer_cleared = False
+                self.logger.debug("✅ Microphone available - resuming audio streaming")
+
             # Send audio event to Realtime API
             event = {
                 "type": "input_audio_buffer.append",
