@@ -82,6 +82,7 @@ class AiNode22(NevilNode):
         self.current_function_call = None
         self.current_conversation_id = None
         self.response_in_progress = False  # Track if API is generating a response
+        self.response_start_time = None  # Track when response started (for timeout safety)
 
         # Visual data storage
         self.latest_image: Optional[Dict[str, Any]] = None
@@ -301,6 +302,8 @@ class AiNode22(NevilNode):
         self.connection_manager.on('response.text.done', self._on_response_text_done)
         self.connection_manager.on('response.audio.delta', self._on_response_audio_delta)
         self.connection_manager.on('response.audio.done', self._on_response_audio_done)
+        self.connection_manager.on('response.audio_transcript.delta', self._on_audio_transcript_delta)
+        self.connection_manager.on('response.audio_transcript.done', self._on_audio_transcript_done)
 
         # Function calling events - CRITICAL: output_item.added contains the function name!
         self.connection_manager.on('response.output_item.added', self._on_output_item_added)
@@ -334,10 +337,22 @@ class AiNode22(NevilNode):
         self.logger.error(f"Realtime API error: {error}")
         self.error_count += 1
 
-        # Clear response flag on error to prevent stuck state
+        # Check if this is the "conversation_already_has_active_response" error
+        # If so, DON'T clear the flag - a response is actually in progress
+        error_code = None
+        if isinstance(error, dict):
+            error_details = error.get('error', {})
+            error_code = error_details.get('code')
+
+        if error_code == 'conversation_already_has_active_response':
+            self.logger.warning("⚠️ API says response already in progress - keeping flag set, will wait for response.done")
+            return
+
+        # Clear response flag on OTHER errors to prevent stuck state
         if self.response_in_progress:
             self.response_in_progress = False
-            self.logger.debug("🚦 Response flag cleared due to error")
+            self.response_start_time = None
+            self.logger.info("🚦 Response flag cleared due to error")
 
     # ========================================================================
     # Response Streaming Event Handlers
@@ -362,7 +377,7 @@ class AiNode22(NevilNode):
             response_text = self.current_response_text.strip()
 
             if response_text:
-                self.logger.info(f"Response complete: '{response_text}'")
+                self.logger.info(f"🤖 NEVIL RESPONSE: '{response_text}'")
 
                 # Publish text response for speech synthesis
                 text_response_data = {
@@ -382,6 +397,10 @@ class AiNode22(NevilNode):
             # Reset for next response
             self.current_response_text = ""
 
+            # IMPORTANT: Clear response flag here as a fallback
+            # The response.done event should clear it, but if that doesn't fire, we clear it here
+            # NOTE: We'll wait for response.done event first, so we don't clear prematurely
+
         except Exception as e:
             self.logger.error(f"Error handling text done: {e}")
 
@@ -398,6 +417,99 @@ class AiNode22(NevilNode):
     def _on_response_audio_done(self, event):
         """Handle completed audio response"""
         pass
+
+    def _on_audio_transcript_delta(self, event):
+        """Handle audio transcript delta (alternative to text delta for audio responses)"""
+        try:
+            delta = event.get('delta', '')
+            if delta:
+                self.current_response_text += delta
+                self.logger.debug(f"🎧 Audio transcript delta: '{delta}'")
+        except Exception as e:
+            self.logger.error(f"Error handling audio transcript delta: {e}")
+
+    def _on_audio_transcript_done(self, event):
+        """Handle completed audio transcript"""
+        try:
+            self.logger.info(f"🎧 Audio transcript done event received")
+
+            transcript = event.get('transcript', '').strip()
+            if not transcript and self.current_response_text:
+                transcript = self.current_response_text.strip()
+
+            if transcript:
+                self.logger.info(f"🤖 NEVIL RESPONSE (audio transcript): '{transcript}'")
+
+                # NOTE: Do NOT publish text_response here - the realtime audio is already
+                # being handled by speech_synthesis_realtime which receives the audio stream directly
+                # Publishing it here causes DOUBLE speech output and mutex confusion
+                self.logger.debug("Audio transcript logged (audio already handled by realtime stream)")
+
+            # Reset for next response
+            self.current_response_text = ""
+
+            # CRITICAL: Clear response flag here as FALLBACK since response.done may not fire
+            # If we have an audio transcript response, the response IS complete
+            if self.response_in_progress:
+                elapsed = time.time() - self.response_start_time if self.response_start_time else 0
+                self.response_in_progress = False
+                self.response_start_time = None
+                self.logger.info(f"🚦 Response flag cleared (via audio_transcript_done) after {elapsed:.2f}s - ready for next command")
+
+        except Exception as e:
+            self.logger.error(f"Error handling audio transcript done: {e}")
+
+    # ========================================================================
+    # Conversation Event Handlers
+    # ========================================================================
+
+    def _on_conversation_item_created(self, event):
+        """
+        Handle conversation item created - captures message content
+
+        Event format:
+        {
+            "type": "conversation.item.created",
+            "item": {
+                "id": "...",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Hello! How can I help you?"
+                    }
+                ]
+            }
+        }
+        """
+        try:
+            # Debug: log the entire event to see structure
+            self.logger.debug(f"📧 conversation.item.created event: {event}")
+
+            item = event.get('item', {})
+            item_type = item.get('type', '')
+            role = item.get('role', '')
+
+            self.logger.debug(f"📧 Item type={item_type}, role={role}")
+
+            # Only log assistant messages (Nevil's responses)
+            if item_type == 'message' and role == 'assistant':
+                content_list = item.get('content', [])
+
+                # Extract text content
+                message_text = ""
+                for content_item in content_list:
+                    if content_item.get('type') == 'text':
+                        message_text += content_item.get('text', '')
+
+                if message_text:
+                    self.logger.info(f"🤖 NEVIL RESPONSE: '{message_text}'")
+                else:
+                    self.logger.warning(f"📧 Assistant message but no text content found. Content: {content_list}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling conversation item created: {e}")
 
     # ========================================================================
     # Function Calling Event Handlers
@@ -416,6 +528,17 @@ class AiNode22(NevilNode):
                 "call_id": "...",
                 "name": "move_forward",  # ← THE FUNCTION NAME IS HERE!
                 "arguments": ""
+            }
+        }
+
+        OR for message type:
+        {
+            "type": "response.output_item.added",
+            "item": {
+                "id": "...",
+                "type": "message",
+                "role": "assistant",
+                "content": [...]
             }
         }
         """
@@ -444,6 +567,12 @@ class AiNode22(NevilNode):
                     "call_id": call_id,
                     "arguments": ""
                 }
+
+            # If it's a message, store the item ID for later tracking
+            elif item_type == 'message':
+                item_id = item.get('id', '')
+                self.logger.debug(f"💬 Message item starting: id={item_id}")
+                # Note: content will come through conversation.item.created event
 
         except Exception as e:
             self.logger.error(f"Error handling output item added: {e}")
@@ -650,33 +779,27 @@ class AiNode22(NevilNode):
             self.logger.error(f"Error handling snapshot: {e}")
             return {"status": "error", "message": str(e)}
 
-    # ========================================================================
-    # Conversation Event Handlers
-    # ========================================================================
-
-    def _on_conversation_item_created(self, event):
-        """Handle new conversation item"""
-        try:
-            item = event.get('item', {})
-            item_type = item.get('type', '')
-
-            self.logger.debug(f"Conversation item created: {item_type}")
-
-        except Exception as e:
-            self.logger.error(f"Error handling conversation item: {e}")
-
     def _on_response_done(self, event):
         """Handle complete response"""
         try:
+            self.logger.info(f"✅✅✅ response.done EVENT RECEIVED: {event}")
+
             # Clear response in progress flag
-            self.response_in_progress = False
-            self.logger.debug("🚦 Response flag cleared - ready for next command")
+            if self.response_in_progress:
+                elapsed = time.time() - self.response_start_time if self.response_start_time else 0
+                self.response_in_progress = False
+                self.response_start_time = None
+                self.logger.info(f"🚦 Response flag cleared after {elapsed:.2f}s - ready for next command")
+            else:
+                self.logger.warning("⚠️ Response done event but flag was already False")
+
             self._set_system_mode("idle", "response_done")
 
         except Exception as e:
             self.logger.error(f"Error handling response done: {e}")
             # Ensure flag is cleared even on error
             self.response_in_progress = False
+            self.response_start_time = None
 
     def _on_speech_started(self, event):
         """Handle user speech detected"""
@@ -708,8 +831,19 @@ class AiNode22(NevilNode):
 
             # Check if response already in progress
             if self.response_in_progress:
-                self.logger.warning(f"⏳ Response in progress, ignoring new command: '{text}'")
-                return
+                # Safety check: if flag has been set for >30 seconds, clear it (stuck state)
+                if hasattr(self, 'response_start_time'):
+                    elapsed = time.time() - self.response_start_time
+                    if elapsed > 30.0:
+                        self.logger.warning(f"⚠️ Response flag stuck for {elapsed:.1f}s - auto-clearing")
+                        self.response_in_progress = False
+                        self.response_start_time = None
+                    else:
+                        self.logger.warning(f"⏳ Response in progress ({elapsed:.1f}s), ignoring new command: '{text}'")
+                        return
+                else:
+                    self.logger.warning(f"⏳ Response in progress, ignoring new command: '{text}'")
+                    return
 
             # Send text to Realtime API (it will generate response)
             if self.connection_manager and self.connection_manager.is_connected():
@@ -730,7 +864,8 @@ class AiNode22(NevilNode):
 
                 # Mark response as in progress before triggering
                 self.response_in_progress = True
-                self.logger.debug("🚦 Response flag set to in_progress")
+                self.response_start_time = time.time()
+                self.logger.info("🚦 Response flag set to in_progress - waiting for response.done event")
 
                 # Trigger response generation
                 self.connection_manager.send_sync({
