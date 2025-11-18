@@ -290,6 +290,10 @@ class SpeechSynthesisNode22(NevilNode):
                 transcript = ''.join(self.transcript_buffer)
                 self.transcript_buffer.clear()
 
+            # Log what Nevil is about to say
+            duration = buffer_size / (24000 * 2)
+            self.logger.info(f"🗣️  NEVIL SAYS: '{transcript}' ({duration:.2f}s)")
+
             # 3. Save to WAV file (REQUIRED for robot_hat.Music())
             volume_db = self.audio_config.get("volume_db", -10)
             wav_file, _ = generate_tts_filename(volume_db=volume_db)

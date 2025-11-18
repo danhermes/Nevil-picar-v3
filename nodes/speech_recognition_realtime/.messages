@@ -121,21 +121,25 @@ configuration:
     reconnect_delay: 1.0
     connection_timeout: 30.0
 
-  # Audio capture settings (48kHz PCM16 for Realtime API - hardware compatible)
+  # Audio capture settings (24kHz PCM16 for Realtime API)
   audio:
-    sample_rate: 48000
-    channel_count: 1
-    echo_cancellation: true
-    noise_suppression: true
-    auto_gain_control: true
-    buffer_size: 4096
-    chunk_size: 9600  # 200ms at 48kHz
+    sample_rate: 24000           # Realtime API requires 24kHz
+    channel_count: 1             # Mono
+    buffer_size: 4096            # PyAudio buffer
+    chunk_size: 4800             # 200ms at 24kHz
+
+    # Voice Activity Detection (VAD) - filters ambient noise
+    vad_enabled: true
+    vad_threshold: 0.03                # Energy threshold (0.0-1.0) - INCREASE to filter more noise
+    vad_min_speech_duration: 0.3       # Minimum speech duration in seconds - filters brief noise bursts
+    speech_timeout_ms: 1500            # Silence duration before committing phrase (milliseconds)
+    auto_flush_ms: 5000                # Max phrase length before auto-commit (milliseconds)
 
   # Recognition settings
   recognition:
     language: "en-US"
     confidence_threshold: 0.5
-    transcript_timeout: 2.0  # Process transcript after 2s of silence
+    transcript_timeout: 2.0      # Process transcript after 2s of silence
 
   # Performance settings
   performance:

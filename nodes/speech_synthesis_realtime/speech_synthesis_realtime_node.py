@@ -221,6 +221,10 @@ class SpeechSynthesisNode22(NevilNode):
             if not audio_b64:
                 return
 
+            # DIAGNOSTIC: Log first chunk to confirm event handler is being called
+            if len(self.audio_buffer) == 0:
+                self.logger.info(f"🎵 FIRST audio delta received - event handler is working!")
+
             # Decode from base64 to PCM16 bytes
             audio_chunk = base64.b64decode(audio_b64)
 
@@ -281,9 +285,7 @@ class SpeechSynthesisNode22(NevilNode):
                 buffer_size = len(complete_audio)
                 self.audio_buffer.clear()
 
-            self.logger.info(f"Audio generation complete: {buffer_size} bytes ({buffer_size / (24000 * 2):.2f}s at 24kHz PCM16)")
-
-            # 2. Get conversation context
+            # 2. Get conversation context and transcript
             conversation_id = self.current_conversation_id
             if not conversation_id:
                 conversation_id = self.chat_logger.generate_conversation_id()
@@ -293,6 +295,10 @@ class SpeechSynthesisNode22(NevilNode):
             with self.transcript_lock:
                 transcript = ''.join(self.transcript_buffer)
                 self.transcript_buffer.clear()
+
+            # Log what Nevil is about to say
+            duration = buffer_size / (24000 * 2)
+            self.logger.info(f"🗣️  NEVIL SAYS: '{transcript}' ({duration:.1f}s, {buffer_size} bytes)")
 
             # 3. Save to WAV file (REQUIRED for robot_hat.Music())
             volume_db = self.audio_config.get("volume_db", -10)
@@ -346,7 +352,9 @@ class SpeechSynthesisNode22(NevilNode):
 
                     # This internally calls play_audio_file(self.music, wav_file)
                     # which uses robot_hat.Music() - DO NOT CHANGE
+                    self.logger.info(f"🔊 Calling Music().play() for file: {wav_file}")
                     success = self.audio_output.play_loaded_speech()
+                    self.logger.info(f"🔊 Music().play() returned: {success}")
 
                     playback_time = time.time() - playback_start
 
@@ -377,13 +385,16 @@ class SpeechSynthesisNode22(NevilNode):
                     self.is_speaking = False
                     self.current_text = ""
 
-                # Log sleep delay (brief delay for acoustic echo suppression)
+                # CRITICAL: Extended delay for acoustic echo suppression + ALSA buffer drain
+                # pygame reports done when audio is sent to ALSA, but dmixer buffers it
+                # We need to wait for the PHYSICAL speaker to finish outputting sound
+                # before unmuting the microphone to prevent feedback loops
                 with self.chat_logger.log_step(
                     conversation_id, "sleep",
                     input_text="post_tts_delay",
-                    metadata={"reason": "acoustic_echo_suppression", "delay_ms": 500}
+                    metadata={"reason": "acoustic_echo_suppression + ALSA_buffer_drain", "delay_ms": 1500}
                 ) as sleep_log:
-                    time.sleep(0.5)
+                    time.sleep(1.5)  # Increased from 0.5s to 1.5s to allow ALSA buffer to drain
                     sleep_log["output_text"] = "delay_complete"
 
                 # Publish speaking status

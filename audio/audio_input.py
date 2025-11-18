@@ -26,7 +26,7 @@ if os.getenv('ALSA_VERBOSITY') == '0':
     os.environ['ALSA_VERBOSITY'] = '0'
 
 
-class AudioInput:
+class AudioInput: #deprecated for realtime
     """
     Audio input wrapper combining:
     - v1.0 speech recognition parameters (EXACT)
@@ -47,9 +47,9 @@ class AudioInput:
 
         # v1.0 EXACT parameters - DO NOT MODIFY
         self.recognizer = sr.Recognizer()
-        
+        #DEPRECATED FOR REATIME
         self.recognizer.dynamic_energy_threshold = False
-        self.recognizer.energy_threshold = 400  # Audio energy level for speech detection (50-4000) - LOWER = more sensitive to ambient noise
+        self.recognizer.energy_threshold = 1500  # Audio energy level for speech detection (50-4000) - LOWER = more sensitive to ambient noise
         self.recognizer.dynamic_energy_adjustment_damping = 0.1  # Rate of dynamic energy threshold adjustment (0.0-1.0) - controls adaptation speed
         self.recognizer.dynamic_energy_ratio = 1.2  # Ratio for dynamic energy adjustment - multiplier for energy threshold changes
         self.recognizer.pause_threshold = 0.5  # Seconds of silence to mark phrase end - SHORTER = more responsive but may cut off speech

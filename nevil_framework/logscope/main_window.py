@@ -49,7 +49,7 @@ class NevilLogScope(QMainWindow):
 
         # Filtering state
         self.active_levels = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
-        self.active_nodes = {'system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation'}
+        self.active_nodes = {'system', 'ai_cognition_realtime', 'speech_recognition_realtime', 'speech_synthesis_realtime', 'visual', 'navigation'}
         self.search_pattern = ""
         self.search_regex = None
         self.crash_monitor_mode = False  # Crash Monitor Mode
@@ -236,7 +236,7 @@ class NevilLogScope(QMainWindow):
         control_layout.addWidget(QLabel("Node Status:"))
         self.node_indicators = {}
 
-        for node in ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation']:
+        for node in ['system', 'ai_cognition_realtime', 'speech_recognition_realtime', 'speech_synthesis_realtime', 'visual', 'navigation']:
             indicator_layout = QHBoxLayout()
 
             # Status LED
@@ -250,7 +250,7 @@ class NevilLogScope(QMainWindow):
             checkbox.stateChanged.connect(lambda state, n=node: self.toggle_node_filter(n, state))
 
             # Hotkey label
-            hotkey_map = {'system': 'F1', 'speech_recognition': 'F2', 'speech_synthesis': 'F3', 'ai_cognition': 'F4', 'visual': 'F5', 'navigation': 'F6'}
+            hotkey_map = {'system': 'F1', 'ai_cognition_realtime': 'F2', 'speech_recognition_realtime': 'F3', 'speech_synthesis_realtime': 'F4', 'visual': 'F5', 'navigation': 'F6'}
             hotkey_label = QLabel(f"({hotkey_map[node]})")
             hotkey_label.setStyleSheet("color: gray; font-size: 10px;")
 
@@ -308,7 +308,7 @@ class NevilLogScope(QMainWindow):
 
         # Node filters (compact checkboxes)
         control_layout.addWidget(QLabel("Nodes:"))
-        for node in ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation']:
+        for node in ['system', 'ai_cognition_realtime', 'speech_recognition_realtime', 'speech_synthesis_realtime', 'visual', 'navigation']:
             checkbox = QCheckBox(node.replace('_', ' ').title())  # Full names, properly capitalized
             checkbox.setChecked(True)
             checkbox.stateChanged.connect(lambda state, n=node: self.toggle_node_filter(n, state))
@@ -348,9 +348,9 @@ class NevilLogScope(QMainWindow):
         self.node_views = {}
         node_tabs = [
             ("system", "🖥️ System"),
-            ("speech_recognition", "🎤 Speech Rec"),
-            ("speech_synthesis", "🔊 Speech Syn"),
-            ("ai_cognition", "🧠 AI Cognition"),
+            ("ai_cognition_realtime", "🧠 AI Realtime"),
+            ("speech_recognition_realtime", "🎤 STT Realtime"),
+            ("speech_synthesis_realtime", "🔊 TTS Realtime"),
             ("visual", "📷 Visual"),
             ("navigation", "🧭 Navigation")
         ]
@@ -392,7 +392,7 @@ class NevilLogScope(QMainWindow):
             QShortcut(QKeySequence(f"Ctrl+{i}"), self, lambda l=level: self.toggle_level_hotkey(l))
 
         # Node filters (F1-F6)
-        nodes = ['system', 'speech_recognition', 'speech_synthesis', 'ai_cognition', 'visual', 'navigation']
+        nodes = ['system', 'ai_cognition_realtime', 'speech_recognition_realtime', 'speech_synthesis_realtime', 'visual', 'navigation']
         for i, node in enumerate(nodes, 1):
             QShortcut(QKeySequence(f"F{i}"), self, lambda n=node: self.toggle_node_hotkey(n))
 
@@ -497,6 +497,27 @@ class NevilLogScope(QMainWindow):
         observer.schedule(handler, str(self.log_dir), recursive=False)
         observer.start()
 
+        # Load existing log content on startup (last 1000 lines from each file)
+        try:
+            for log_file in self.log_dir.glob("*.log"):
+                try:
+                    with open(log_file, 'r', encoding='utf-8') as f:
+                        # Read last 1000 lines
+                        lines = f.readlines()
+                        start_line = max(0, len(lines) - 1000)
+
+                        for line in lines[start_line:]:
+                            entry = handler.parse_log_line(str(log_file), line.strip())
+                            if entry:
+                                self.update_queue.put(('log', entry))
+
+                        # Set file position to end
+                        handler.file_positions[str(log_file)] = f.tell()
+                except Exception as e:
+                    print(f"Error loading existing content from {log_file}: {e}")
+        except Exception as e:
+            print(f"Error loading existing logs: {e}")
+
         try:
             while self.running:
                 threading.Event().wait(1)
@@ -508,6 +529,28 @@ class NevilLogScope(QMainWindow):
         """Fallback polling mode for log monitoring"""
         import time
         file_positions = {}
+
+        # Load existing log content on startup (last 1000 lines from each file)
+        try:
+            log_files = list(self.log_dir.glob("*.log"))
+            for log_file in log_files:
+                try:
+                    with open(log_file, 'r', encoding='utf-8') as f:
+                        # Read last 1000 lines
+                        lines = f.readlines()
+                        start_line = max(0, len(lines) - 1000)
+
+                        for line in lines[start_line:]:
+                            entry = self._parse_log_line_simple(str(log_file), line.strip())
+                            if entry:
+                                self.update_queue.put(('log', entry))
+
+                        # Set file position to end
+                        file_positions[str(log_file)] = f.tell()
+                except Exception as e:
+                    print(f"Error loading existing content from {log_file}: {e}")
+        except Exception as e:
+            print(f"Error loading existing logs: {e}")
 
         while self.running:
             try:
@@ -536,28 +579,26 @@ class NevilLogScope(QMainWindow):
 
     def _parse_log_line_simple(self, file_path, line):
         """Simple log line parser"""
-        # Basic pattern matching
-        parts = line.split('] [')
-        if len(parts) >= 3:
-            try:
-                timestamp = parts[0].lstrip('[')
-                level = parts[1]
-                node = parts[2]
-                message = '] ['.join(parts[3:]).rstrip(']') if len(parts) > 3 else ""
+        # Use same regex pattern as watchdog handler for consistency
+        pattern = re.compile(
+            r'\[(?P<timestamp>[^\]]+) EST\] \[(?P<level>[^\]]+)\] '
+            r'\[(?P<node>[^\]]+)\] (?:\[(?P<component>[^\]]+)\] )?'
+            r'(?P<message>.*)'
+        )
 
-                return {
-                    'timestamp': timestamp.replace(' EST', ''),
-                    'level': level,
-                    'node': node,
-                    'component': '',
-                    'message': message,
-                    'file_path': file_path,
-                    'raw_line': line
-                }
-            except:
-                pass
+        match = pattern.match(line)
+        if not match:
+            return None
 
-        return None
+        return {
+            'timestamp': match.group('timestamp').strip(),
+            'level': match.group('level').strip(),
+            'node': match.group('node').strip(),
+            'component': match.group('component').strip() if match.group('component') else '',
+            'message': match.group('message').strip(),
+            'file_path': file_path,
+            'raw_line': line
+        }
 
     def process_update_queue(self):
         """Process queued updates from monitoring thread"""
@@ -618,12 +659,12 @@ class NevilLogScope(QMainWindow):
         }
 
         node_colors = {
-            'system': '#0080FF',           # Blue
-            'speech_recognition': '#40FFFF', # Light Cyan
-            'speech_synthesis': '#80FF80',   # Light Green
-            'ai_cognition': '#FF80FF',       # Light Magenta
-            'visual': '#FFB347',           # Peach/Orange
-            'navigation': '#9370DB',       # Medium Purple
+            'system': '#0080FF',                    # Blue
+            'ai_cognition_realtime': '#FF80FF',     # Light Magenta
+            'speech_recognition_realtime': '#40FFFF', # Light Cyan
+            'speech_synthesis_realtime': '#80FF80',   # Light Green
+            'visual': '#FFB347',                    # Peach/Orange
+            'navigation': '#9370DB',                # Medium Purple
         }
 
         level_color = level_colors.get(level, '#FFFFFF')
@@ -733,7 +774,7 @@ class NevilLogScope(QMainWindow):
     def _is_dialogue_related(self, entry):
         """Check if entry is dialogue/speech related"""
         # Check if it's from speech-related nodes
-        if entry['node'] in ['speech_recognition', 'speech_synthesis']:
+        if entry['node'] in ['speech_recognition_realtime', 'speech_synthesis_realtime', 'ai_cognition_realtime']:
             return True
 
         # Check message content for speech/dialogue keywords
@@ -742,7 +783,7 @@ class NevilLogScope(QMainWindow):
             'speech', 'tts', 'stt', 'audio', 'voice', 'speak', 'listen',
             'microphone', 'recognition', 'synthesis', 'utterance', 'transcript',
             'dialogue', 'conversation', 'whisper', 'openai', 'azure', 'pyttsx3',
-            'pygame', 'recording', 'playback', 'say', 'hear', 'sound'
+            'pygame', 'recording', 'playback', 'say', 'hear', 'sound', 'realtime'
         ]
 
         return any(keyword in message for keyword in dialogue_keywords)

@@ -405,17 +405,15 @@ class AiNode22(NevilNode):
             self.logger.error(f"Error handling text done: {e}")
 
     def _on_response_audio_delta(self, event):
-        """Handle streaming audio response delta"""
-        try:
-            # Audio deltas could be forwarded directly to audio output
-            # For now, we rely on text responses
-            pass
-
-        except Exception as e:
-            self.logger.error(f"Error handling audio delta: {e}")
+        """Handle streaming audio response delta - delegated to speech_synthesis_realtime node"""
+        # NOTE: Audio playback is handled by speech_synthesis_realtime node
+        # This node only monitors for logging purposes
+        pass
 
     def _on_response_audio_done(self, event):
-        """Handle completed audio response"""
+        """Handle completed audio response - delegated to speech_synthesis_realtime node"""
+        # NOTE: Audio playback is handled by speech_synthesis_realtime node
+        # This node only monitors for logging purposes
         pass
 
     def _on_audio_transcript_delta(self, event):
@@ -832,7 +830,7 @@ class AiNode22(NevilNode):
             # Check if response already in progress
             if self.response_in_progress:
                 # Safety check: if flag has been set for >30 seconds, clear it (stuck state)
-                if hasattr(self, 'response_start_time'):
+                if self.response_start_time is not None:
                     elapsed = time.time() - self.response_start_time
                     if elapsed > 30.0:
                         self.logger.warning(f"⚠️ Response flag stuck for {elapsed:.1f}s - auto-clearing")

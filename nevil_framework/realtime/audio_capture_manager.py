@@ -51,6 +51,7 @@ class AudioCaptureConfig:
         device_index: Optional[int] = None,
         vad_enabled: bool = True,  # Enable VAD by default for manual commit mode
         vad_threshold: float = 0.02,
+        vad_min_speech_duration: float = 0.3,  # Minimum speech duration in seconds
         auto_flush_ms: int = 200,
         speech_timeout_ms: int = 1500  # Commit after 1.5s of silence
     ):
@@ -65,6 +66,7 @@ class AudioCaptureConfig:
             device_index: Specific audio device (None = default)
             vad_enabled: Enable Voice Activity Detection
             vad_threshold: VAD volume threshold (0.0-1.0)
+            vad_min_speech_duration: Minimum speech duration in seconds (filters brief noise)
             auto_flush_ms: Auto-flush buffered audio after this many ms
         """
         self.sample_rate = sample_rate
@@ -74,6 +76,7 @@ class AudioCaptureConfig:
         self.device_index = device_index
         self.vad_enabled = vad_enabled
         self.vad_threshold = vad_threshold
+        self.vad_min_speech_duration = vad_min_speech_duration
         self.auto_flush_ms = auto_flush_ms
         self.speech_timeout_ms = speech_timeout_ms
 
@@ -164,6 +167,7 @@ class AudioCaptureManager:
         self.vad_speech_active = False
         self.vad_silence_frames = 0
         self.vad_silence_threshold = 10  # Frames of silence to trigger speech_end
+        self.vad_speech_start_time = 0  # Track when speech started
 
         # Commit cooldown (prevent rapid re-commits that cause empty buffer errors)
         self.last_commit_time = 0
@@ -532,12 +536,8 @@ class AudioCaptureManager:
                     # Calculate volume
                     volume_level = self._calculate_volume(audio_float32)
 
-                    # LOG EVERY AUDIO SIGNAL to file (even if quiet)
-                    with open("/tmp/nevil_mic_status.txt", "a") as f:
-                        f.write(f"[{time.strftime('%H:%M:%S')}] MIC SIGNAL: volume={volume_level:.4f}, samples={len(audio_float32)}\n")
-
-                    # LOG EVERY AUDIO SIGNAL (even if quiet)
-                    self.logger.info(f"🎤 MIC SIGNAL: volume={volume_level:.4f}, samples={len(audio_float32)}")
+                    # Only log mic signals at DEBUG level (too verbose for INFO)
+                    self.logger.debug(f"🎤 MIC SIGNAL: volume={volume_level:.4f}, samples={len(audio_float32)}")
 
                     # ⚠️ CRITICAL: Check mutex BEFORE doing ANYTHING with audio
                     # If Nevil is speaking, skip ALL processing - don't buffer, don't send, nothing
@@ -562,12 +562,12 @@ class AudioCaptureManager:
 
                         # ✅ PROOF: Audio successfully buffered during speech
                         if self.vad_speech_active:
-                            self.logger.info(f"✅ BUFFERED during speech: {len(audio_float32)} samples, buffer_length={self.buffer_length}")
+                            self.logger.debug(f"✅ BUFFERED during speech: {len(audio_float32)} samples, buffer_length={self.buffer_length}")
 
                     # Process when we have enough data
                     if self.buffer_length >= self.config.chunk_size:
                         if self.vad_speech_active:
-                            self.logger.info(f"🔥 CALLING _process_audio_chunk during speech! buffer_length={self.buffer_length}")
+                            self.logger.debug(f"🔥 CALLING _process_audio_chunk during speech! buffer_length={self.buffer_length}")
                         self._process_audio_chunk()
 
                     # Auto-flush check (prevent buffer from growing too large)
@@ -680,6 +680,7 @@ class AudioCaptureManager:
             if not self.vad_speech_active:
                 # Speech started
                 self.vad_speech_active = True
+                self.vad_speech_start_time = time.time()  # Track start time
                 self.logger.debug("VAD: Speech started")
                 if self.callbacks.on_vad_speech_start:
                     self.callbacks.on_vad_speech_start()
@@ -689,9 +690,16 @@ class AudioCaptureManager:
                 self.vad_silence_frames += 1
 
                 if self.vad_silence_frames >= self.vad_silence_threshold:
-                    # Speech ended
+                    # Speech ended - check minimum duration before committing
+                    speech_duration = time.time() - self.vad_speech_start_time
+
                     self.vad_speech_active = False
                     self.vad_silence_frames = 0
+
+                    # FILTER: Ignore very short speech bursts (likely noise)
+                    if speech_duration < self.config.vad_min_speech_duration:
+                        self.logger.debug(f"🚫 VAD: Speech too short ({speech_duration:.2f}s < {self.config.vad_min_speech_duration}s) - ignoring")
+                        return
 
                     # ⚠️ CRITICAL: Cooldown check to prevent rapid re-commits
                     # Realtime API clears buffer after commit, so rapid commits cause empty buffer errors
@@ -711,7 +719,21 @@ class AudioCaptureManager:
                             self.callbacks.on_vad_speech_end()
                         return
 
-                    self.logger.info("VAD: Speech ended - committing audio for transcription")
+                    # FILTER: Don't commit if buffer is empty or too small (silence/ambient noise)
+                    # This prevents transcribing silence as "Thanks for watching" etc.
+                    # 50ms minimum allows short words like "yes", "no", "stop"
+                    MIN_BUFFER_SIZE = int(self.config.sample_rate * 0.05)  # 50ms minimum (1200 samples at 24kHz)
+                    if self.buffer_length < MIN_BUFFER_SIZE:
+                        self.logger.debug(f"🚫 VAD: Speech ended but buffer too small ({self.buffer_length} < {MIN_BUFFER_SIZE}) - ignoring")
+                        # Clear the small buffer - it's just noise
+                        with self.buffer_lock:
+                            self.audio_buffer.clear()
+                            self.buffer_length = 0
+                        if self.callbacks.on_vad_speech_end:
+                            self.callbacks.on_vad_speech_end()
+                        return
+
+                    self.logger.info(f"VAD: Speech ended - committing {self.buffer_length} samples for transcription")
 
                     # ⚠️ CRITICAL: Commit audio buffer and request response (manual mode without Server VAD)
                     # With turn_detection=None, we must manually:

@@ -131,11 +131,19 @@ class SpeechRecognitionNode22(NevilNode):
 
             # Prepare audio config but don't start capture yet (need connection first)
             # CRITICAL: NO device_index - let PyAudio use system default (v1.0/v2.0 approach)
+            #
+            # All audio parameters now loaded from .messages config file
+            # Edit nodes/speech_recognition_realtime/.messages to tune VAD threshold
             self.audio_config_prepared = AudioCaptureConfig(
                 sample_rate=self.audio_config.get('sample_rate', 24000),
                 channel_count=self.audio_config.get('channel_count', 1),
                 chunk_size=self.audio_config.get('chunk_size', 4800),
-                buffer_size=self.audio_config.get('buffer_size', 4096)
+                buffer_size=self.audio_config.get('buffer_size', 4096),
+                vad_enabled=self.audio_config.get('vad_enabled', True),
+                vad_threshold=self.audio_config.get('vad_threshold', 0.03),
+                vad_min_speech_duration=self.audio_config.get('vad_min_speech_duration', 0.3),
+                speech_timeout_ms=self.audio_config.get('speech_timeout_ms', 1500),
+                auto_flush_ms=self.audio_config.get('auto_flush_ms', 5000)
             )
 
             # Prepare callbacks
@@ -237,6 +245,18 @@ class SpeechRecognitionNode22(NevilNode):
         Process completed transcript and publish to voice_command topic
         (Same pattern as speech_recognition_node.py _process_audio_discrete)
         """
+        # FILTER 1: Ignore very short transcriptions (likely noise/fragments)
+        # Energy threshold now prevents most ambient noise, so we can be less aggressive here
+        word_count = len(text.split())
+        if word_count < 2:
+            self.logger.debug(f"🚫 Ignored short transcription ({word_count} words): '{text}'")
+            return
+
+        # FILTER 2: Minimum meaningful length (at least 8 characters)
+        if len(text.strip()) < 8:
+            self.logger.debug(f"🚫 Ignored too-short text ({len(text)} chars): '{text}'")
+            return
+
         # Generate unique conversation ID
         conversation_id = self.chat_logger.generate_conversation_id()
 
@@ -336,13 +356,17 @@ class SpeechRecognitionNode22(NevilNode):
                 self.buffer_cleared = False
                 self.logger.debug("✅ Microphone available - resuming audio streaming")
 
+            # NOTE: Energy/VAD threshold filtering already handled by AudioCaptureManager
+            # (configured via vad_threshold in AudioCaptureConfig above)
+            # This callback only receives audio chunks that passed VAD threshold
+
             # Send audio event to Realtime API
             event = {
                 "type": "input_audio_buffer.append",
                 "audio": base64_audio
             }
             self.connection_manager.send_sync(event)  # Thread-safe synchronous send
-            self.logger.debug("Sent audio chunk to Realtime API")
+            self.logger.debug(f"Sent audio chunk to Realtime API (volume: {volume_level:.4f})")
 
         except Exception as e:
             self.logger.error(f"Error sending audio data: {e}")

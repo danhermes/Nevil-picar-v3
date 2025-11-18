@@ -47,6 +47,28 @@ class AudioOutput:
         # DO NOT MODIFY - this works perfectly
         self.music = Music()
 
+        # DIAGNOSTIC: Log mixer configuration for debugging HFB vs HDMI playback
+        try:
+            import pygame
+            import subprocess
+
+            mixer_config = self.music.pygame.mixer.get_init()
+            print(f"[AudioOutput] Music() mixer initialized: {mixer_config}")
+
+            # Check which ALSA device pygame is actually using
+            result = subprocess.run(['lsof', '-p', str(os.getpid())],
+                                   capture_output=True, text=True, timeout=2)
+            snd_devices = [line for line in result.stdout.split('\n') if '/dev/snd/' in line]
+            if snd_devices:
+                print(f"[AudioOutput] Audio devices in use by this process:")
+                for dev in snd_devices:
+                    print(f"[AudioOutput]   {dev}")
+            else:
+                print(f"[AudioOutput] No /dev/snd/ devices currently open")
+
+        except Exception as e:
+            print(f"[AudioOutput] Warning: Could not check mixer config: {e}")
+
         # Thread safety for TTS playback (from v1.0)
         self.speech_lock = threading.Lock()
         self.speech_loaded = False
