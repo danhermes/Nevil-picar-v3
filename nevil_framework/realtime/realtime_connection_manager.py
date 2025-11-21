@@ -257,6 +257,9 @@ class RealtimeConnectionManager:
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.loop_thread: Optional[Thread] = None
         self.running = False
+
+        # Response state tracking (shared with audio_capture_manager to prevent queue buildup)
+        self.response_in_progress = False
         self.shutdown_event: Optional[asyncio.Event] = None  # Created in event loop thread
 
         logger.info(f"RealtimeConnectionManager initialized (debug={debug})")

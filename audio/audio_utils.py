@@ -70,11 +70,37 @@ def play_audio_file(music, tts_file):
     """
     try:
         if os.path.exists(tts_file):
+            # LOG: Check which audio device is actually being used
+            import subprocess
+            print(f"[AUDIO DEVICE DEBUG] Checking audio device before playback...")
+
+            # Check lsof for /dev/snd devices
+            lsof_result = subprocess.run(['lsof', '-p', str(os.getpid())],
+                                        capture_output=True, text=True, timeout=2)
+            snd_devices = [line for line in lsof_result.stdout.split('\n') if '/dev/snd/' in line]
+            if snd_devices:
+                print(f"[AUDIO DEVICE DEBUG] Devices already open:")
+                for dev in snd_devices:
+                    print(f"[AUDIO DEVICE DEBUG]   {dev}")
+
             playback_start = time.time()
             print(f"[PLAYBACK TIMING] Starting playback at {playback_start:.3f}")
             music.music_play(tts_file)
             first_sound = time.time()
             print(f"[PLAYBACK TIMING] music_play() returned after {(first_sound - playback_start)*1000:.1f}ms")
+
+            # LOG: Check which device is open during playback
+            time.sleep(0.3)  # Brief pause to let device open
+            lsof_result = subprocess.run(['lsof', '-p', str(os.getpid())],
+                                        capture_output=True, text=True, timeout=2)
+            snd_devices = [line for line in lsof_result.stdout.split('\n') if '/dev/snd/' in line]
+            if snd_devices:
+                print(f"[AUDIO DEVICE DEBUG] Devices during playback:")
+                for dev in snd_devices:
+                    print(f"[AUDIO DEVICE DEBUG]   {dev}")
+            else:
+                print(f"[AUDIO DEVICE DEBUG] No /dev/snd devices detected - likely using PipeWire/PulseAudio")
+
             while music.pygame.mixer.music.get_busy():
                 time.sleep(0.1)
             playback_end = time.time()

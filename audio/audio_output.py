@@ -9,8 +9,8 @@ import os
 import time
 import threading
 import warnings
+import sys
 from dotenv import load_dotenv
-from robot_hat import Music
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,6 +22,22 @@ if os.getenv('HIDE_ALSA_LOGGING', '').lower() == 'true':
 # Set ALSA verbosity to 0 if specified
 if os.getenv('ALSA_VERBOSITY') == '0':
     os.environ['ALSA_VERBOSITY'] = '0'
+
+# CRITICAL: Force pygame to use ALSA backend instead of PipeWire
+# This uses your existing .asoundrc configuration (card 2 = HiFiBerry)
+# This is NOT altering ALSA config - just telling SDL to use ALSA instead of PipeWire
+os.environ['SDL_AUDIODRIVER'] = 'alsa'
+os.environ['AUDIODEV'] = 'default'  # Uses .asoundrc default
+
+# CRITICAL FIX: Pre-initialize pygame.mixer at 24kHz to match Realtime API output
+# This MUST happen before importing robot_hat.Music()
+sys.stdout = open(os.devnull, 'w')
+import pygame
+sys.stdout = sys.__stdout__
+pygame.mixer.pre_init(frequency=24000, size=-16, channels=1, buffer=1024)
+print("[AudioOutput] Pre-initialized pygame.mixer: 24000 Hz, mono, ALSA backend")
+
+from robot_hat import Music
 from .audio_utils import play_audio_file, generate_tts_filename, ensure_tts_directory
 
 
@@ -39,9 +55,22 @@ class AudioOutput:
     def __init__(self):
         """Initialize audio output using EXACT v1.0 pattern"""
 
-        # EXACT v1.0 initialization pattern
-        # DO NOT MODIFY - this is from init_system()
-        os.popen("pinctrl set 20 op dh")  # enable robot_hat speaker switch
+        # EXACT v1.0 initialization pattern - enable amplifier GPIO
+        # CRITICAL FIX: Use subprocess.run() instead of os.popen() to ensure completion
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["pinctrl", "set", "20", "op", "dh"],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0:
+                print("[AudioOutput] Amplifier enabled (GPIO 20 HIGH)")
+            else:
+                print(f"[AudioOutput] Warning: GPIO 20 enable failed: {result.stderr}")
+        except Exception as e:
+            print(f"[AudioOutput] Warning: Could not enable GPIO 20: {e}")
 
         # EXACT v1.0 Music() initialization
         # DO NOT MODIFY - this works perfectly
@@ -55,6 +84,17 @@ class AudioOutput:
             mixer_config = self.music.pygame.mixer.get_init()
             print(f"[AudioOutput] Music() mixer initialized: {mixer_config}")
 
+            # Check SDL audio driver being used
+            try:
+                sdl_driver = os.environ.get('SDL_AUDIODRIVER', 'not set')
+                print(f"[AudioOutput] SDL_AUDIODRIVER: {sdl_driver}")
+
+                # Try to get actual SDL driver from pygame
+                if hasattr(pygame, 'get_sdl_version'):
+                    print(f"[AudioOutput] SDL version: {pygame.get_sdl_version()}")
+            except Exception as e:
+                print(f"[AudioOutput] SDL info unavailable: {e}")
+
             # Check which ALSA device pygame is actually using
             result = subprocess.run(['lsof', '-p', str(os.getpid())],
                                    capture_output=True, text=True, timeout=2)
@@ -64,7 +104,17 @@ class AudioOutput:
                 for dev in snd_devices:
                     print(f"[AudioOutput]   {dev}")
             else:
-                print(f"[AudioOutput] No /dev/snd/ devices currently open")
+                print(f"[AudioOutput] No /dev/snd/ devices currently open (likely using PipeWire/PulseAudio)")
+
+                # Check PipeWire/PulseAudio default sink
+                try:
+                    pactl_result = subprocess.run(['pactl', 'info'],
+                                                 capture_output=True, text=True, timeout=2)
+                    for line in pactl_result.stdout.split('\n'):
+                        if 'Default Sink' in line:
+                            print(f"[AudioOutput] PulseAudio/PipeWire {line.strip()}")
+                except:
+                    pass
 
         except Exception as e:
             print(f"[AudioOutput] Warning: Could not check mixer config: {e}")

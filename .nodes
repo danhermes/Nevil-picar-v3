@@ -16,8 +16,8 @@ environment:
   NEVIL_REALTIME_ENABLED: "true"
 
 launch:
-  # Phase 1: Realtime API nodes (streaming) + navigation + visual + LED indicator
-  startup_order: ["led_indicator", "speech_recognition_realtime", "speech_synthesis_realtime", "ai_cognition_realtime", "navigation", "visual"]
+  # Phase 1: Realtime API nodes (streaming) + navigation + visual + LED indicator + memory
+  startup_order: ["led_indicator", "memory", "speech_recognition_realtime", "speech_synthesis_realtime", "ai_cognition_realtime", "navigation", "visual"]
   parallel_launch: false
   wait_for_healthy: true
   ready_timeout: 30.0

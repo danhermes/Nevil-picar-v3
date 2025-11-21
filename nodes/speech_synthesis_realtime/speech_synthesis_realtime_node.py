@@ -389,12 +389,13 @@ class SpeechSynthesisNode22(NevilNode):
                 # pygame reports done when audio is sent to ALSA, but dmixer buffers it
                 # We need to wait for the PHYSICAL speaker to finish outputting sound
                 # before unmuting the microphone to prevent feedback loops
+                # INCREASED TO 3.0s to prevent mic from picking up room echo/reverb
                 with self.chat_logger.log_step(
                     conversation_id, "sleep",
                     input_text="post_tts_delay",
-                    metadata={"reason": "acoustic_echo_suppression + ALSA_buffer_drain", "delay_ms": 1500}
+                    metadata={"reason": "acoustic_echo_suppression + ALSA_buffer_drain + room_echo", "delay_ms": 3000}
                 ) as sleep_log:
-                    time.sleep(1.5)  # Increased from 0.5s to 1.5s to allow ALSA buffer to drain
+                    time.sleep(3.0)  # Increased from 1.5s to 3.0s to allow room echo to dissipate
                     sleep_log["output_text"] = "delay_complete"
 
                 # Publish speaking status

@@ -223,7 +223,66 @@ class AiNode22(NevilNode):
                 "parameters": {"type": "object", "properties": {}}
             })
 
-            self.logger.info(f"Loaded {len(self.gesture_functions)} gestures + movement + camera + sounds")
+            # Add memory functions
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "remember",
+                "description": "Store a memory for later recall. Use this when the user shares preferences, personal information, or important moments.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "The user's message to remember"
+                        },
+                        "response": {
+                            "type": "string",
+                            "description": "Your response acknowledging the memory"
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": ["preference", "personal", "intense", "general"],
+                            "description": "Memory category: preference (likes/dislikes), personal (background/experiences), intense (memorable conversations), general (other)"
+                        },
+                        "importance": {
+                            "type": "number",
+                            "description": "Importance score 1-10 (10=critical, 8-9=important, 6-7=moderate, 4-5=general, 1-3=low)"
+                        }
+                    },
+                    "required": ["message", "response", "category", "importance"]
+                }
+            })
+
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "recall",
+                "description": "Recall memories from the past using semantic search. Use this before responding to questions about user preferences or past conversations.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query for recalling memories"
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": ["preference", "personal", "intense", "general"],
+                            "description": "Optional category filter"
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum number of memories to return (default 5)"
+                        },
+                        "min_importance": {
+                            "type": "number",
+                            "description": "Minimum importance score to return (default 3)"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            })
+
+            self.logger.info(f"Loaded {len(self.gesture_functions)} gestures + movement + camera + sounds + memory")
 
         except Exception as e:
             self.logger.error(f"Failed to load gesture library: {e}")
@@ -548,8 +607,11 @@ class AiNode22(NevilNode):
 
             # Mark response as in progress when API starts generating ANY output
             # This catches responses we didn't initiate (shouldn't happen, but defensive)
+            # ⚠️ CRITICAL: Set flag on connection_manager so audio_capture can check it
             if not self.response_in_progress:
                 self.response_in_progress = True
+                if self.connection_manager:
+                    self.connection_manager.response_in_progress = True
                 self.logger.debug("🚦 Response flag set to in_progress (output_item_added)")
 
             # If it's a function call, initialize our tracking
@@ -654,6 +716,15 @@ class AiNode22(NevilNode):
             if function_name == "take_snapshot":
                 self.logger.info("📸 Handling camera snapshot")
                 return self._handle_take_snapshot()
+
+            # Handle memory functions
+            if function_name == "remember":
+                self.logger.info("🧠 Handling memory storage")
+                return self._handle_remember(args)
+
+            if function_name == "recall":
+                self.logger.info("🧠 Handling memory recall")
+                return self._handle_recall(args)
 
             # Handle movement commands
             if function_name in ["move_forward", "move_backward", "turn_left", "turn_right", "stop_movement"]:
@@ -777,15 +848,97 @@ class AiNode22(NevilNode):
             self.logger.error(f"Error handling snapshot: {e}")
             return {"status": "error", "message": str(e)}
 
+    def _handle_remember(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle memory storage request"""
+        try:
+            message = args.get('message', '')
+            response = args.get('response', '')
+            category = args.get('category', 'general')
+            importance = args.get('importance', 5)
+
+            if not message:
+                return {"status": "error", "message": "No message provided to remember"}
+
+            self.logger.info(f"Storing memory: category={category}, importance={importance}")
+
+            # Publish memory request to memory node
+            memory_request_data = {
+                "operation": "remember",
+                "params": {
+                    "message": message,
+                    "response": response,
+                    "category": category,
+                    "importance": importance
+                },
+                "timestamp": time.time()
+            }
+
+            if self.publish("memory_request", memory_request_data):
+                self.logger.info(f"✓ Memory request published")
+                return {
+                    "status": "success",
+                    "message": f"Memory stored (category={category}, importance={importance})"
+                }
+            else:
+                return {"status": "error", "message": "Failed to publish memory request"}
+
+        except Exception as e:
+            self.logger.error(f"Error handling remember: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def _handle_recall(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle memory recall request"""
+        try:
+            query = args.get('query', '')
+            category = args.get('category')
+            limit = args.get('limit', 5)
+            min_importance = args.get('min_importance', 3)
+
+            if not query:
+                return {"status": "error", "message": "No query provided for recall"}
+
+            self.logger.info(f"Recalling memories for query: {query}")
+
+            # Publish memory request to memory node
+            memory_request_data = {
+                "operation": "recall",
+                "params": {
+                    "query": query,
+                    "category": category,
+                    "limit": limit,
+                    "min_importance": min_importance
+                },
+                "timestamp": time.time()
+            }
+
+            if self.publish("memory_request", memory_request_data):
+                self.logger.info(f"✓ Memory recall request published")
+                # NOTE: The actual memories will be returned via memory_response topic
+                # For now, we just acknowledge the request
+                return {
+                    "status": "success",
+                    "message": f"Memory recall requested for: {query}",
+                    "note": "Memories will be available via memory_response topic"
+                }
+            else:
+                return {"status": "error", "message": "Failed to publish memory recall request"}
+
+        except Exception as e:
+            self.logger.error(f"Error handling recall: {e}")
+            return {"status": "error", "message": str(e)}
+
     def _on_response_done(self, event):
         """Handle complete response"""
         try:
             self.logger.info(f"✅✅✅ response.done EVENT RECEIVED: {event}")
 
             # Clear response in progress flag
+            # ⚠️ CRITICAL: Clear flag on connection_manager so audio_capture knows we're ready
             if self.response_in_progress:
                 elapsed = time.time() - self.response_start_time if self.response_start_time else 0
                 self.response_in_progress = False
+                if self.connection_manager:
+                    self.connection_manager.response_in_progress = False
                 self.response_start_time = None
                 self.logger.info(f"🚦 Response flag cleared after {elapsed:.2f}s - ready for next command")
             else:
@@ -797,6 +950,8 @@ class AiNode22(NevilNode):
             self.logger.error(f"Error handling response done: {e}")
             # Ensure flag is cleared even on error
             self.response_in_progress = False
+            if self.connection_manager:
+                self.connection_manager.response_in_progress = False
             self.response_start_time = None
 
     def _on_speech_started(self, event):

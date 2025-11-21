@@ -171,7 +171,7 @@ class AudioCaptureManager:
 
         # Commit cooldown (prevent rapid re-commits that cause empty buffer errors)
         self.last_commit_time = 0
-        self.commit_cooldown = 2.0  # 2 seconds between commits
+        self.commit_cooldown = 0.5  # 500ms between commits (reduced from 2.0s to prevent audio accumulation)
 
         # Auto-flush timer
         self.last_flush_time = time.time()
@@ -682,6 +682,22 @@ class AudioCaptureManager:
                 self.vad_speech_active = True
                 self.vad_speech_start_time = time.time()  # Track start time
                 self.logger.debug("VAD: Speech started")
+
+                # ⚠️ CRITICAL: Clear API buffer at START of speech to prevent accumulation
+                # BUT ONLY if microphone is available (not during TTS playback)
+                # This prevents clearing buffer when detecting Nevil's own speech
+                from nevil_framework.microphone_mutex import microphone_mutex
+                if microphone_mutex.is_microphone_available():
+                    if self.connection_manager:
+                        try:
+                            clear_event = {"type": "input_audio_buffer.clear"}
+                            self.connection_manager.send_sync(clear_event)
+                            self.logger.debug("🗑️ Cleared API audio buffer at speech start")
+                        except Exception as e:
+                            self.logger.error(f"Error clearing API buffer at speech start: {e}")
+                else:
+                    self.logger.debug("🚫 Skipping API buffer clear - mutex blocked (Nevil is speaking)")
+
                 if self.callbacks.on_vad_speech_start:
                     self.callbacks.on_vad_speech_start()
         else:
@@ -737,35 +753,54 @@ class AudioCaptureManager:
 
                     # ⚠️ CRITICAL: Commit audio buffer and request response (manual mode without Server VAD)
                     # With turn_detection=None, we must manually:
-                    # 1. Wait for audio to be processed by API
+                    # 1. STOP sending new audio immediately (pause streaming)
                     # 2. Commit the audio buffer
                     # 3. Request a response
+                    # 4. Clear local buffer to prevent re-sending
                     if self.connection_manager:
                         try:
-                            # ⚠️ CRITICAL FIX: Add delay to allow API to process audio chunks
-                            # Race condition: WebSocket sends are async, but commit is sync
-                            # Audio chunks may not be in API buffer yet when commit arrives
-                            # 200ms delay ensures audio has time to reach and be processed by API
+                            # ⚠️ CRITICAL FIX: Pause audio streaming IMMEDIATELY to prevent race condition
+                            # This prevents new audio chunks from being added to the buffer during commit
+                            was_recording = self.is_recording
+                            self.is_recording = False  # Temporarily stop processing new audio
+                            self.logger.debug("🛑 Paused audio streaming for clean commit")
+
+                            # Small delay to ensure in-flight audio chunks are processed (reduced from 200ms to 50ms)
                             import time as time_module
-                            time_module.sleep(0.2)  # 200ms delay
-                            self.logger.debug("⏱️  Waited 200ms for API to process audio chunks")
+                            time_module.sleep(0.05)  # 50ms delay - just enough for in-flight chunks
 
                             # Step 1: Commit audio
                             commit_event = {"type": "input_audio_buffer.commit"}
                             self.connection_manager.send_sync(commit_event)
                             self.last_commit_time = time.time()  # Update cooldown timer
-                            self.logger.debug("Committed audio buffer to Realtime API")
+                            self.logger.debug("✅ Committed audio buffer to Realtime API")
 
-                            # Step 2: Request transcription + response (ONE response.create for everything)
+                            # Step 2: Clear LOCAL buffer to prevent re-sending committed audio
+                            with self.buffer_lock:
+                                self.audio_buffer.clear()
+                                self.buffer_length = 0
+                            self.logger.debug("🗑️  Cleared local audio buffer after commit")
+
+                            # Step 3: Request transcription + response (ONE response.create for everything)
                             # With manual VAD (turn_detection=None), we must explicitly request response
-                            response_event = {
-                                "type": "response.create",
-                                "response": {
-                                    "modalities": ["text", "audio"]  # Generate BOTH text and audio in ONE response
+                            # ⚠️ CRITICAL: Only request response if NOT already generating one
+                            # This prevents multiple responses from being queued when user pauses mid-speech
+                            if hasattr(self.connection_manager, 'response_in_progress') and self.connection_manager.response_in_progress:
+                                self.logger.info("🚫 Response already in progress - skipping response.create to prevent queue buildup")
+                            else:
+                                response_event = {
+                                    "type": "response.create",
+                                    "response": {
+                                        "modalities": ["text", "audio"]  # Generate BOTH text and audio in ONE response
+                                    }
                                 }
-                            }
-                            self.connection_manager.send_sync(response_event)
-                            self.logger.debug("Requested text+audio response - will flow to ai_node22 and speech_synthesis via events")
+                                self.connection_manager.send_sync(response_event)
+                                self.logger.debug("🎯 Requested text+audio response")
+
+                            # Resume audio streaming after commit
+                            if was_recording:
+                                self.is_recording = True
+                                self.logger.debug("▶️  Resumed audio streaming")
 
                             # DON'T acquire mutex here - let speech_synthesis handle it
                             # speech_synthesis will acquire when it receives the first audio chunk
@@ -829,8 +864,8 @@ class AudioCaptureManager:
         Returns:
             PCM16 bytes (16-bit signed integers)
         """
-        # Apply software gain (4x amplification for better sensitivity)
-        audio_data = audio_data * 4.0
+        # Apply software gain (3x for good sensitivity without excessive feedback)
+        audio_data = audio_data * 3.0
 
         # Clamp to valid range to prevent clipping
         audio_data = np.clip(audio_data, -1.0, 1.0)

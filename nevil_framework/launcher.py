@@ -462,15 +462,10 @@ pcm.!default {{
         Based on i2samp script approach.
         """
         try:
-            # Restart aplay service if it exists (from i2samp setup)
-            self.logger.debug("Checking for aplay service...")
-            result = subprocess.run(['systemctl', 'is-active', 'aplay.service'],
-                                  capture_output=True, text=True)
-
-            if result.returncode == 0 and 'active' in result.stdout:
-                self.logger.info("Restarting aplay service...")
-                subprocess.run(['sudo', 'systemctl', 'restart', 'aplay.service'],
-                             check=False, capture_output=True)
+            # DO NOT restart aplay service - it blocks audio playback
+            # The aplay service runs aplay from /dev/zero which prevents
+            # Nevil from playing audio through the speakers
+            self.logger.debug("Skipping aplay service restart (blocks audio)")
 
             # Force reload of ALSA configuration in current process
             self._reload_alsa_in_process()

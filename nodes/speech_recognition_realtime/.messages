@@ -130,7 +130,7 @@ configuration:
 
     # Voice Activity Detection (VAD) - filters ambient noise
     vad_enabled: true
-    vad_threshold: 0.08                # Energy threshold (0.0-1.0) - INCREASE to filter more noise
+    vad_threshold: 0.08                # Energy threshold (0.0-1.0) - LOWERED for better sensitivity
     vad_min_speech_duration: 0.3       # Minimum speech duration in seconds - filters brief noise bursts
     speech_timeout_ms: 1500            # Silence duration before committing phrase (milliseconds)
     auto_flush_ms: 5000                # Max phrase length before auto-commit (milliseconds)

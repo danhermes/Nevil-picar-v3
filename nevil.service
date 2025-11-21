@@ -5,8 +5,11 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=root
-Group=root
+User=dan
+Group=dan
+# Include supplementary groups for hardware access
+SupplementaryGroups=audio video gpio i2c spi input render
+
 WorkingDirectory=/home/dan/Nevil-picar-v3
 ExecStart=/home/dan/Nevil-picar-v3/nevil start
 Restart=on-failure
@@ -14,9 +17,13 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Environment
+# Environment variables for user session access
 Environment=HOME=/home/dan
 Environment=USER=dan
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=ALSA_VERBOSITY=0
+Environment=HIDE_ALSA_LOGGING=true
 
 [Install]
 WantedBy=multi-user.target

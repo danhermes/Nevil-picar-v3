@@ -41,10 +41,27 @@ oswarning=( "Debian" "Kano" "Mate" "PiTop" "Ubuntu" ) # list experimental os-rel
 osdeny=( "Darwin" "Kali" ) # list os-releases specifically disallowed
 
 FORCE=$1
+NO_APLAY=false
 DEVICE_TREE=true
 ASK_TO_REBOOT=false
 CURRENT_SETTING=false
 UPDATE_DB=false
+
+# Parse arguments
+for arg in "$@"; do
+    case $arg in
+        -y)
+            FORCE='-y'
+            ;;
+        -n|--no-aplay)
+            NO_APLAY=true
+            ;;
+        -yn|-ny)
+            FORCE='-y'
+            NO_APLAY=true
+            ;;
+    esac
+done
 
 BOOTCMD=/boot/firmware/cmdline.txt
 CONFIG=/boot/firmware/config.txt
@@ -423,14 +440,20 @@ sudo apt install alsa-utils -y
 # sudo systemctl daemon-reload
 # sudo systemctl disable aplay
 # newline
-# echo "You can optionally activate '/dev/zero' playback in"
-# echo "the background at boot. This will remove all"
-# echo "popping/clicking but does use some processor time."
-# newline
-# if confirm "Activate '/dev/zero' playback in background? [RECOMMENDED]"; then
-# newline
-# sudo systemctl enable aplay
-# ASK_TO_REBOOT=true
+#
+# if ! $NO_APLAY; then
+#     echo "You can optionally activate '/dev/zero' playback in"
+#     echo "the background at boot. This will remove all"
+#     echo "popping/clicking but does use some processor time."
+#     newline
+#     if confirm "Activate '/dev/zero' playback in background? [RECOMMENDED]"; then
+#     newline
+#     sudo systemctl enable aplay
+#     ASK_TO_REBOOT=true
+#     fi
+# else
+#     echo "Skipping aplay /dev/zero background playback (--no-aplay flag set)"
+#     newline
 # fi
 
 # config asound
@@ -446,6 +469,12 @@ if [ -e /etc/asound.conf ]; then
 fi
 
 # auto_sound_card scripts
+# This script will be installed to: /usr/local/bin/auto_sound_card
+# Logs the last 10 calls with BEFORE/AFTER state to: /var/log/auto_sound_card.log
+# To view log: cat /var/log/auto_sound_card.log
+# Each log entry shows:
+#   - BEFORE: Current asound.conf card, running card states, open audio devices
+#   - AFTER: Target configuration (card, volumes, mic settings)
 
 sudo cat > /usr/local/bin/auto_sound_card << '-EOF'
 #!/bin/bash
@@ -599,8 +628,9 @@ pcm.!default {
     slave.pcm       "softvol"
 }
 EOF
-    echo "systemctl restart aplay.service"
-    sudo systemctl restart aplay.service
+    # DO NOT restart aplay.service - it blocks audio playback
+    # echo "systemctl restart aplay.service"
+    # sudo systemctl restart aplay.service
 
     if [ -n $1 ] && [ $1 -gt 0 ]; then
         echo "set volume to $1"
@@ -614,6 +644,13 @@ exit 0
 
 sudo chmod +x /usr/local/bin/auto_sound_card
 
+# stop and disable existing service if it exists
+if systemctl is-enabled --quiet auto_sound_card.service 2>/dev/null; then
+    echo "Stopping and disabling existing auto_sound_card service..."
+    sudo systemctl stop auto_sound_card.service
+    sudo systemctl disable auto_sound_card.service
+fi
+
 # execute the script once
 sudo /usr/local/bin/auto_sound_card 100
 
@@ -621,9 +658,12 @@ sudo /usr/local/bin/auto_sound_card 100
 sudo cat > /etc/systemd/system/auto_sound_card.service << EOF
 [Unit]
 Description=Auto config als sound card num at system start.
-Wants=aplay.service
 
 [Service]
+Type=oneshot
+User=dan
+Group=dan
+SupplementaryGroups=audio
 ExecStart=/usr/local/bin/auto_sound_card
 
 [Install]
