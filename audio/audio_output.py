@@ -237,6 +237,12 @@ class AudioOutput:
                 return False
 
         try:
+            # Stop any currently playing audio before starting new playback
+            # This prevents audio overlap when responses come quickly
+            if self.is_playing():
+                print(f"[AudioOutput] Stopping previous playback before new audio")
+                self.stop_playback()
+
             print(f"Playing TTS file: {self.tts_file}")
 
             # EXACT v1.0 playback using Music()

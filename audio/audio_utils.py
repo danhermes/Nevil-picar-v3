@@ -101,14 +101,17 @@ def play_audio_file(music, tts_file):
             else:
                 print(f"[AUDIO DEVICE DEBUG] No /dev/snd devices detected - likely using PipeWire/PulseAudio")
 
-            while music.pygame.mixer.music.get_busy():
-                time.sleep(0.1)
-            playback_end = time.time()
-            print(f"[PLAYBACK TIMING] Playback completed in {(playback_end - playback_start):.3f}s")
-            music.music_stop()
+            # Start playback asynchronously
+            # The speech_synthesis_realtime_node will monitor completion via is_playing()
+            # This prevents blocking here but still allows proper feedback prevention
+            print(f"[PLAYBACK TIMING] Audio playback started at {playback_start:.3f}")
 
             # Clean up old files, keeping only the last 10
             cleanup_old_audio_files("./audio/nevil_wavs/", max_files=10)
+
+            # Return immediately - let caller monitor playback status
+            # Note: music.music_stop() will be called by the Music() cleanup or
+            # when next audio starts (see audio_output.py stop_playback)
     except Exception as e:
         print(f"Error playing TTS: {e}")
 

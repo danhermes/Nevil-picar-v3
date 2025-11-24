@@ -385,18 +385,30 @@ class SpeechSynthesisNode22(NevilNode):
                     self.is_speaking = False
                     self.current_text = ""
 
-                # CRITICAL: Extended delay for acoustic echo suppression + ALSA buffer drain
-                # pygame reports done when audio is sent to ALSA, but dmixer buffers it
-                # We need to wait for the PHYSICAL speaker to finish outputting sound
-                # before unmuting the microphone to prevent feedback loops
-                # INCREASED TO 3.0s to prevent mic from picking up room echo/reverb
+                # CRITICAL: Wait for audio playback to complete + minimal echo suppression
+                # We MUST wait for the physical speaker to finish to prevent feedback loop
+                # But we do this in a non-blocking way for the API response flow
+                wait_start = time.time()
+                max_wait = 30.0  # Safety timeout for extremely long responses
+
                 with self.chat_logger.log_step(
                     conversation_id, "sleep",
-                    input_text="post_tts_delay",
-                    metadata={"reason": "acoustic_echo_suppression + ALSA_buffer_drain + room_echo", "delay_ms": 3000}
+                    input_text="wait_for_playback_completion",
+                    metadata={"reason": "prevent_acoustic_feedback"}
                 ) as sleep_log:
-                    time.sleep(3.0)  # Increased from 1.5s to 3.0s to allow room echo to dissipate
-                    sleep_log["output_text"] = "delay_complete"
+                    # Wait for audio playback to finish
+                    while self.audio_output.is_playing() and (time.time() - wait_start) < max_wait:
+                        time.sleep(0.1)
+
+                    playback_duration = time.time() - wait_start
+
+                    # Add minimal post-playback delay for room echo dissipation
+                    time.sleep(0.3)  # Short delay after playback completes
+
+                    total_wait = time.time() - wait_start
+                    sleep_log["output_text"] = f"playback_complete_after_{total_wait:.2f}s"
+                    sleep_log["metadata"]["playback_duration_ms"] = int(playback_duration * 1000)
+                    sleep_log["metadata"]["total_wait_ms"] = int(total_wait * 1000)
 
                 # Publish speaking status
                 self._publish_speaking_status(False, "", "")
