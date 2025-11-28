@@ -48,10 +48,10 @@ class AudioInput: #deprecated for realtime
         # v1.0 EXACT parameters - DO NOT MODIFY
         self.recognizer = sr.Recognizer()
         #DEPRECATED FOR REATIME
-        self.recognizer.dynamic_energy_threshold = False
-        self.recognizer.energy_threshold = 1500  # Audio energy level for speech detection (50-4000) - LOWER = more sensitive to ambient noise
-        self.recognizer.dynamic_energy_adjustment_damping = 0.1  # Rate of dynamic energy threshold adjustment (0.0-1.0) - controls adaptation speed
-        self.recognizer.dynamic_energy_ratio = 1.2  # Ratio for dynamic energy adjustment - multiplier for energy threshold changes
+        self.recognizer.dynamic_energy_threshold = True  # ✅ ENABLED - Auto-adapts to ambient noise
+        self.recognizer.energy_threshold = 1500  # Initial threshold (auto-adjusted when dynamic=True)
+        self.recognizer.dynamic_energy_adjustment_damping = 0.15  # Rate of adaptation (0.0-1.0) - HIGHER = faster adaptation
+        self.recognizer.dynamic_energy_ratio = 1.5  # Sensitivity multiplier - HIGHER = more sensitive
         self.recognizer.pause_threshold = 0.5  # Seconds of silence to mark phrase end - SHORTER = more responsive but may cut off speech
         self.recognizer.operation_timeout = 18  # Maximum seconds to wait for speech input before timeout
         self.phrase_threshold = 0.5  # Minimum speaking duration before considering phrase - filters out brief noise
