@@ -198,8 +198,19 @@ class SpeechSynthesisNode22(NevilNode):
                 with self.transcript_lock:
                     self.transcript_buffer.clear()
 
-                # Reset mutex flag for new TTS session
-                self.mutex_acquired = False
+                # ⚠️ CRITICAL: Acquire mutex IMMEDIATELY when assistant response starts
+                # This happens BEFORE audio streaming begins, preventing any audio from
+                # being sent to the API while Nevil is speaking
+                from nevil_framework.microphone_mutex import microphone_mutex
+
+                if not self.mutex_acquired:
+                    microphone_mutex.acquire_noisy_activity("speaking")
+                    self.mutex_acquired = True
+                    self.logger.info("🔇 Microphone muted - Nevil starting to speak (output_item_added)")
+
+                # Publish speaking status immediately
+                self._publish_speaking_status(True, "", "")
+                self.logger.info("📢 Published speaking_status=True at response start")
 
                 self.logger.debug(f"Started new audio output item: {item_id}")
 
@@ -232,12 +243,12 @@ class SpeechSynthesisNode22(NevilNode):
             with self.buffer_lock:
                 self.audio_buffer.append(audio_chunk)
 
-            # Fallback: If somehow mutex wasn't acquired yet (shouldn't happen with new flow)
+            # Safety check: Mutex should already be acquired in _on_output_item_added()
             if not self.mutex_acquired:
                 from nevil_framework.microphone_mutex import microphone_mutex
                 microphone_mutex.acquire_noisy_activity("speaking")
                 self.mutex_acquired = True
-                self.logger.warning("⚠️  Mutex not acquired - fallback activation (this shouldn't happen)")
+                self.logger.error("❌ CRITICAL: Mutex not acquired before audio delta! This indicates event ordering issue.")
 
             self.logger.debug(f"Buffered audio chunk: {len(audio_chunk)} bytes (total: {sum(len(c) for c in self.audio_buffer)} bytes)")
 
@@ -407,8 +418,8 @@ class SpeechSynthesisNode22(NevilNode):
 
                     total_wait = time.time() - wait_start
                     sleep_log["output_text"] = f"playback_complete_after_{total_wait:.2f}s"
-                    sleep_log["metadata"]["playback_duration_ms"] = int(playback_duration * 1000)
-                    sleep_log["metadata"]["total_wait_ms"] = int(total_wait * 1000)
+                    sleep_log["playback_duration_ms"] = int(playback_duration * 1000)
+                    sleep_log["total_wait_ms"] = int(total_wait * 1000)
 
                 # Publish speaking status
                 self._publish_speaking_status(False, "", "")
@@ -522,21 +533,12 @@ class SpeechSynthesisNode22(NevilNode):
 
             self.logger.info(f"Requesting TTS from Realtime API: '{text[:50]}'... (voice: {voice})")
 
-            # ⚠️ CRITICAL: Acquire mutex IMMEDIATELY when we receive text response
-            # This prevents VAD from detecting Nevil's upcoming speech
-            from nevil_framework.microphone_mutex import microphone_mutex
+            # Note: Mutex already acquired in _on_output_item_added() when response started
+            # No need to acquire again here
 
-            if not self.mutex_acquired:
-                microphone_mutex.acquire_noisy_activity("speaking")
-                self.mutex_acquired = True
-                self.logger.info("🔇 Microphone muted (acquired 'speaking') - preparing for TTS")
-
-            # DON'T clear the input buffer here - mutex already blocks new audio
-            # Clearing during response generation might interfere with the API
-
-            # Publish speaking status to notify other nodes
+            # Update speaking status with actual text content
             self._publish_speaking_status(True, text, voice)
-            self.logger.info("📢 Published speaking_status=True BEFORE TTS request")
+            self.logger.debug(f"📢 Updated speaking_status with text: '{text[:30]}'...")
 
             # 4. ⚠️ CRITICAL FIX: DO NOT call response.create here!
             # Calling response.create creates a NEW conversation turn, which triggers
@@ -553,6 +555,67 @@ class SpeechSynthesisNode22(NevilNode):
 
         except Exception as e:
             self.logger.error(f"Error handling text response: {e}")
+
+    def on_tts_request(self, message):
+        """
+        Handle direct TTS requests (e.g., announcements, shutdown messages).
+
+        This is different from on_text_response - it's a direct request for TTS,
+        not part of a conversational AI response.
+        """
+        try:
+            text = message.data.get("text", "")
+            if not text.strip():
+                self.logger.warning("Received empty TTS request, ignoring")
+                return
+
+            priority = message.data.get("priority", 50)
+            self.logger.info(f"🔊 [TTS REQUEST] Priority {priority}: '{text}'")
+
+            # For direct TTS requests, we need to:
+            # 1. Create a conversation item with the text
+            # 2. Request audio generation via response.create
+
+            if not self.realtime_manager:
+                self.logger.error("No realtime_manager available for TTS request")
+                return
+
+            # Acquire mutex BEFORE speaking
+            microphone_mutex.acquire("TTS_announcement")
+
+            try:
+                # Send the text to Realtime API for TTS generation
+                # This creates a conversation turn and generates audio
+                self.realtime_manager.send_event({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{
+                            "type": "input_text",
+                            "text": f"[ANNOUNCEMENT] {text}"
+                        }]
+                    }
+                })
+
+                # Request audio-only response
+                self.realtime_manager.send_event({
+                    "type": "response.create",
+                    "response": {
+                        "modalities": ["audio"],  # Audio only, no text
+                        "instructions": f"Say exactly: {text}"
+                    }
+                })
+
+                self.logger.info(f"✅ [TTS REQUEST] Sent to Realtime API for generation")
+
+            except Exception as e:
+                self.logger.error(f"Error generating TTS: {e}")
+                microphone_mutex.release("TTS_announcement")
+                raise
+
+        except Exception as e:
+            self.logger.error(f"Error handling TTS request: {e}")
 
     def on_system_mode_change(self, message):
         """Handle system mode changes (declaratively configured callback)"""

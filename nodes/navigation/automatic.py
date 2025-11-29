@@ -261,16 +261,17 @@ class Automatic:
         speech_pct = int(speech_freq * 100)
 
         prompt = f"You are in autonomous mode with mood '{self.current_mood_name}' (talk {speech_pct}% of time). "
-        # Encourage stillness and minimal movement
-        prompt += "Stillness is good. Movement is optional - only move if you really want to. "
-        prompt += "Empty actions [] or just 1-2 small gestures are perfectly fine. "
+        # Encourage alternating between exploration and contemplation
+        prompt += "Alternate between active exploration and quiet contemplation. "
+        prompt += "Sometimes explore actively (scout_mode, look around, move), other times just subtle gestures or stillness. "
+        prompt += "Vary your behavior - don't always do the same thing. "
         # Add gentle speed guidance - prefer slow/med over fast
-        prompt += "When you do move, use thoughtful, deliberate speeds (:slow or :med preferred). "
+        prompt += "When you do move, use thoughtful speeds (:slow or :med preferred). "
 
         if use_vision:
-            prompt += "You can see your environment - comment on what you observe or stay silent and still. "
+            prompt += "You can see your environment - explore it or observe quietly. "
         else:
-            prompt += "What's on your mind? You can just think quietly with minimal or no movement. "
+            prompt += "What's on your mind? Explore, think, or just be. "
 
         return prompt
 

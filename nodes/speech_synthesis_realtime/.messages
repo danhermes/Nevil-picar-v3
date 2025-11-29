@@ -84,6 +84,21 @@ subscribes:
         required: true
         description: "Unix timestamp"
 
+  - topic: "tts_request"
+    message_type: "TtsRequest"
+    callback: "on_tts_request"
+    description: "Direct TTS requests (e.g., announcements, shutdown messages)"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Text to speak"
+      priority:
+        type: "integer"
+        required: false
+        description: "Priority (1=highest)"
+        default: 50
+
   - topic: "system_mode"
     message_type: "SystemMode"
     callback: "on_system_mode_change"

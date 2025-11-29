@@ -289,7 +289,16 @@ class SpeechRecognitionNode22(NevilNode):
             if self.direct_command_handler:
                 if self.direct_command_handler.check_and_handle(text):
                     self.logger.info(f"✓ Direct command handled: '{text}'")
+                    # Don't cancel AI response - let it finish, then auto mode will wait
                     return  # Don't send to AI - direct command was executed
+
+            # ⚠️ CRITICAL: Block AI voice commands during TTS to prevent feedback
+            # Direct commands (above) are ALWAYS processed, but AI commands are blocked
+            from nevil_framework.microphone_mutex import microphone_mutex
+            if not microphone_mutex.is_microphone_available():
+                active = microphone_mutex.get_active_activities()
+                self.logger.info(f"🚫 Ignoring AI command during noisy activity: {active}")
+                return  # Don't send to AI - Nevil is speaking/moving
 
             # Calculate confidence (realtime API provides high quality)
             confidence = 0.95  # Realtime API has high accuracy
@@ -319,7 +328,13 @@ class SpeechRecognitionNode22(NevilNode):
 
     def _on_error_event(self, event: Dict[str, Any]):
         """Handle error events from Realtime API"""
-        error_msg = event.get("error", {}).get("message", "Unknown error")
+        # Event can be either a dict or an exception object
+        if isinstance(event, dict):
+            error_msg = event.get("error", {}).get("message", "Unknown error")
+        else:
+            # It's an exception object (e.g., ConnectionClosedError)
+            error_msg = str(event)
+
         self.logger.error(f"Realtime API error: {error_msg}")
         self.error_count += 1
 
@@ -584,10 +599,14 @@ class SpeechRecognitionNode22(NevilNode):
             if self.audio_capture:
                 self.audio_capture.pause()
 
+            # CRITICAL: Clear the Realtime API's audio buffer to prevent feedback
+            # Audio already sent continues to be transcribed even after pause
+            self._clear_audio_buffer()
+
             # Publish listening status change
             self._publish_listening_status(False, "stopped")
 
-            self.logger.info("⏸️  Paused realtime streaming STT")
+            self.logger.info("⏸️  Paused realtime streaming STT + cleared audio buffer")
 
         except Exception as e:
             self.logger.error(f"Error stopping listening: {e}")
@@ -601,14 +620,26 @@ class SpeechRecognitionNode22(NevilNode):
         self.publish("listening_status", status_data)
 
     def _clear_audio_buffer(self):
-        """Clear the Realtime API input audio buffer to prevent feedback"""
+        """Clear the Realtime API input audio buffer AND cancel in-flight transcriptions"""
         try:
             if self.connection_manager:
+                # Clear input audio buffer (new audio chunks)
                 clear_event = {
                     "type": "input_audio_buffer.clear"
                 }
                 self.connection_manager.send_sync(clear_event)
-                self.logger.debug("Cleared audio input buffer")
+
+                # Cancel any response in progress (transcriptions are part of response)
+                try:
+                    cancel_event = {
+                        "type": "response.cancel"
+                    }
+                    self.connection_manager.send_sync(cancel_event)
+                    self.logger.info("🗑️  Cleared audio buffer + cancelled in-flight responses")
+                except Exception as e:
+                    # response.cancel fails if no response in progress - this is OK
+                    self.logger.debug(f"No response to cancel (expected): {e}")
+                    self.logger.info("🗑️  Cleared speech recognition audio buffer")
         except Exception as e:
             self.logger.error(f"Error clearing audio buffer: {e}")
 

@@ -756,80 +756,28 @@ class NavigationNode(NevilNode):
 
         return stats
 
-    def start_auto_mode(self):
-        """Start automatic autonomous behavior"""
-        if self.auto_enabled:
-            self.logger.info("[AUTO] Already in auto mode")
-            print("\n[AUTOMATIC MODE] ⚠️ Already active!")
-            return
-
-        print("\n" + "="*70)
-        print("🤖 [AUTOMATIC MODE] ACTIVATING...")
-        print(f"🎭 Current Mood: {self.automatic.current_mood_name.upper()}")
-        print("📝 Commands:")
-        print("  • Say 'Stop auto' or 'Come back' to exit")
-        print("  • Say 'Set mood [playful/curious/sleepy/etc]' to change personality")
-        print("="*70 + "\n")
-
-        self.logger.info("🚀 [AUTO] Starting autonomous mode")
-        self.auto_enabled = True
-        self.mock_nevil.auto_enabled = True
-
-        # Start auto thread
-        self.auto_thread = threading.Thread(
-            target=self.run_auto,
-            daemon=True
-        )
-        self.auto_thread.start()
-
-        # Publish status
-        self.publish("auto_mode_status", {
-            "enabled": True,
-            "mood": self.automatic.current_mood_name,
-            "timestamp": time.time()
-        })
-
-        # Send TTS confirmation
-        self.publish("tts_request", {
-            "text": "Okay, I'll go play now!",
-            "priority": 10
-        })
-
-    def stop_auto_mode(self):
-        """Stop automatic autonomous behavior"""
-        if not self.auto_enabled:
-            self.logger.info("[AUTO] Not in auto mode")
-            print("\n[AUTOMATIC MODE] ℹ️ Not currently active")
-            return
-
-        print("\n" + "="*60)
-        print("🛑 [AUTOMATIC MODE] DEACTIVATING...")
-        print("Returning to manual control")
-        print("="*60 + "\n")
-
-        self.logger.info("🛑 [AUTO] Stopping autonomous mode")
-        self.auto_enabled = False
-        self.mock_nevil.auto_enabled = False
-
-        # Wait for thread to stop
-        if self.auto_thread and self.auto_thread.is_alive():
-            self.auto_thread.join(timeout=2.0)
-
-        # Publish status
-        self.publish("auto_mode_status", {
-            "enabled": False,
-            "timestamp": time.time()
-        })
-
-        # Send TTS confirmation
-        self.publish("tts_request", {
-            "text": "I'm back!",
-            "priority": 10
-        })
+    # NOTE: start_auto_mode() and stop_auto_mode() are defined below at lines 977+
+    # to avoid duplication and ensure proper error handling
 
     def run_auto(self):
         """Run autonomous behavior loop"""
         self.logger.info("[AUTO] Autonomous thread started")
+
+        # Wait for any in-progress AI response to complete
+        # (e.g., if user said "Can you go play?" - let AI respond to that first, THEN start auto mode)
+        self.logger.info("[AUTO] Waiting for any in-progress AI response to complete...")
+        max_wait = 15  # Maximum 15 seconds to wait
+        waited = 0
+        while waited < max_wait:
+            # Check if AI is busy (this is a simple heuristic - could be improved)
+            # For now, just wait 5 seconds which should be enough for most responses
+            if waited >= 5:
+                break
+            time.sleep(1)
+            waited += 1
+            self.logger.debug(f"[AUTO] Waited {waited}s for AI response...")
+
+        self.logger.info("[AUTO] Starting autonomous behavior cycles")
 
         while self.auto_enabled and not self.shutdown_event.is_set():
             try:
@@ -926,6 +874,7 @@ class NavigationNode(NevilNode):
 
             if command == 'start':
                 self.logger.info("🚀 [AUTO COMMAND] Calling start_auto_mode()")
+                # TTS announcement is now in start_auto_mode() itself
                 self.start_auto_mode()
             elif command == 'stop':
                 self.logger.info("🛑 [AUTO COMMAND] Calling stop_auto_mode()")
@@ -964,13 +913,38 @@ class NavigationNode(NevilNode):
     def start_auto_mode(self):
         """Start automatic mode"""
         try:
-            if self.auto_enabled:
-                self.logger.info("[AUTO] Already in automatic mode")
+            # Check if already running AND thread is alive
+            if self.auto_enabled and hasattr(self, 'auto_thread') and self.auto_thread.is_alive():
+                self.logger.info("[AUTO] Already in automatic mode (thread alive)")
                 return
+
+            # If flag was set but thread died, log it
+            if self.auto_enabled:
+                self.logger.warning("[AUTO] Flag was set but thread died - restarting")
+
+            # Console announcement
+            print("\n" + "="*70)
+            print("🤖 [AUTOMATIC MODE] ACTIVATING...")
+            print(f"🎭 Current Mood: {self.automatic.current_mood_name.upper()}")
+            print("📝 Commands:")
+            print("  • Say 'Stop auto' or 'Come back' to exit")
+            print("  • Say 'Set mood [playful/curious/sleepy/etc]' to change personality")
+            print("="*70 + "\n")
 
             self.logger.info("🚀 [AUTO] Starting automatic mode...")
             self.auto_enabled = True
             self.mock_nevil.auto_enabled = True
+
+            # TTS announcement FIRST - "Okay, I'll go play now!"
+            # Do this BEFORE starting the thread so user knows immediately
+            self.publish("tts_request", {
+                "text": "Okay, I'll go play now!",
+                "priority": 1  # HIGHEST PRIORITY
+            })
+            self.logger.info("🔊 [AUTO] Announcing activation...")
+
+            # Brief delay to let TTS start
+            time.sleep(0.5)
 
             # Start autonomous thread
             self.auto_thread = threading.Thread(target=self.run_auto, daemon=True)
@@ -982,12 +956,6 @@ class NavigationNode(NevilNode):
                 "mood": self.automatic.current_mood_name,
                 "behavior": "starting",
                 "timestamp": time.time()
-            })
-
-            # Announce activation
-            self.publish("tts_request", {
-                "text": f"Automatic mode activated! I'm feeling {self.automatic.current_mood_name}.",
-                "priority": 10
             })
 
             self.logger.info("✅ [AUTO] Automatic mode started successfully")
@@ -1004,7 +972,21 @@ class NavigationNode(NevilNode):
                 self.logger.info("[AUTO] Automatic mode not running")
                 return
 
+            # Console announcement
+            print("\n" + "="*60)
+            print("🛑 [AUTOMATIC MODE] DEACTIVATING...")
+            print("Returning to manual control")
+            print("="*60 + "\n")
+
             self.logger.info("🛑 [AUTO] Stopping automatic mode...")
+
+            # TTS announcement FIRST - "I'm back!"
+            self.publish("tts_request", {
+                "text": "I'm back!",
+                "priority": 1  # HIGHEST PRIORITY
+            })
+            self.logger.info("🔊 [AUTO] Announcing deactivation...")
+
             self.auto_enabled = False
             self.mock_nevil.auto_enabled = False
 
@@ -1018,12 +1000,6 @@ class NavigationNode(NevilNode):
                 "mood": self.automatic.current_mood_name,
                 "behavior": "stopped",
                 "timestamp": time.time()
-            })
-
-            # Announce deactivation
-            self.publish("tts_request", {
-                "text": "Automatic mode deactivated.",
-                "priority": 10
             })
 
             self.logger.info("✅ [AUTO] Automatic mode stopped successfully")

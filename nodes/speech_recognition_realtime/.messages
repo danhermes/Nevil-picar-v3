@@ -61,6 +61,44 @@ publishes:
         required: false
         description: "Reason for status change"
 
+  - topic: "auto_mode_command"
+    message_type: "AutoModeCommand"
+    description: "Direct commands to start/stop automatic mode"
+    frequency: "on_demand"
+    schema:
+      command:
+        type: "string"
+        required: true
+        description: "Command to execute"
+        allowed: ["start", "stop"]
+      trigger:
+        type: "string"
+        required: false
+        description: "Trigger phrase that activated this command"
+      original_text:
+        type: "string"
+        required: false
+        description: "Original recognized text"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
+  - topic: "tts_request"
+    message_type: "TtsRequest"
+    description: "Request text-to-speech (e.g., shutdown announcements)"
+    frequency: "on_demand"
+    schema:
+      text:
+        type: "string"
+        required: true
+        description: "Text to speak"
+      priority:
+        type: "integer"
+        required: false
+        description: "Priority (1=highest)"
+        default: 50
+
 # Topics this node subscribes to
 subscribes:
   - topic: "system_mode"
