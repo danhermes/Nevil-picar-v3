@@ -20,6 +20,7 @@ import time
 import json
 import base64
 import logging
+import random
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -97,12 +98,23 @@ class AiNode22(NevilNode):
         self.latest_image: Optional[Dict[str, Any]] = None
         self.pending_vision_image: Optional[Dict[str, Any]] = None  # Queue for images arriving during responses
 
+        # Autonomous vision settings
+        # Philosophy: 80% vision during interactions, 20% unsolicited autonomous
+        # Longer intervals = vision happens mostly when you talk to Nevil
+        self.autonomous_vision_enabled = os.getenv('NEVIL_AUTONOMOUS_VISION', 'true').lower() == 'true'
+        self.autonomous_vision_interval_base = int(os.getenv('NEVIL_VISION_INTERVAL', '180'))  # Base interval (3 minutes)
+        self.autonomous_vision_randomness = 0.5  # ±50% randomness (e.g., 180s ± 90s = 90-270s = 1.5-4.5min)
+        self.next_vision_time = 0  # When next autonomous vision should trigger
+        self.last_vision_time = 0  # Track when we last took a snapshot
+        self.min_vision_interval = 15  # Minimum seconds between snapshots (prevent spam)
+
         # Statistics
         self.processing_count = 0
         self.function_call_count = 0
         self.error_count = 0
         self.vision_call_count = 0
         self.vision_error_count = 0
+        self.autonomous_vision_count = 0  # Track autonomous snapshots
 
         # Initialize YouTube music library BEFORE loading gestures (needed by gesture library)
         self.youtube_library = YouTubeLibrary()
@@ -1055,6 +1067,7 @@ class AiNode22(NevilNode):
 
             text_lower = text.lower()
 
+            # Direct vision request keywords
             vision_keywords = [
                 "what do you see", "what can you see", "what are you looking at",
                 "what's in front", "look at", "describe what you see",
@@ -1062,8 +1075,15 @@ class AiNode22(NevilNode):
                 "look around", "take a look", "show me what you see", "check your camera"
             ]
 
+            # Context keywords that suggest vision would be helpful
+            surroundings_keywords = [
+                "where are you", "what's around", "what room", "describe your location",
+                "what's nearby", "what's in the room", "environment", "surroundings"
+            ]
+
+            # Check for direct vision request
             if any(keyword in text_lower for keyword in vision_keywords):
-                self.logger.info(f"🎥 VISION INTENT detected - bypassing function calling, triggering camera directly")
+                self.logger.info(f"🎥 DIRECT VISION REQUEST - triggering camera")
 
                 # Add user's question to conversation
                 if self.connection_manager and self.connection_manager.is_connected():
@@ -1076,15 +1096,17 @@ class AiNode22(NevilNode):
                         }
                     })
 
-                # Trigger camera directly (NOT via function call)
-                self.publish("snap_pic", {
-                    "requested_by": "ai_node22_intent_detection",
-                    "timestamp": time.time(),
-                    "trigger": "voice_intent"
-                })
-
+                # Trigger camera
+                self._trigger_vision_snapshot(trigger="voice_direct")
                 self.logger.info("⏸️ Waiting for vision data before responding...")
                 return  # Vision handler will inject description and trigger response
+
+            # Check for surroundings discussion (trigger vision but continue with conversation)
+            elif any(keyword in text_lower for keyword in surroundings_keywords):
+                self.logger.info(f"🌍 SURROUNDINGS CONTEXT detected - triggering autonomous vision")
+                # Trigger vision in background (don't wait for it)
+                self._trigger_vision_snapshot(trigger="context_surroundings")
+                # Continue processing the voice command normally
 
             # Check if response already in progress
             if self.response_in_progress:
@@ -1291,7 +1313,29 @@ class AiNode22(NevilNode):
     # ========================================================================
 
     def main_loop(self):
-        """Main processing loop - minimal for event-driven architecture"""
+        """Main processing loop with autonomous vision (randomized timing)"""
+        # Check if it's time for autonomous vision
+        if self.autonomous_vision_enabled:
+            current_time = time.time()
+
+            # Initialize next_vision_time on first run
+            if self.next_vision_time == 0:
+                self.next_vision_time = current_time + self._get_random_vision_interval()
+
+            # Check if it's time for next autonomous snapshot
+            if current_time >= self.next_vision_time:
+                interval = current_time - self.last_vision_time if self.last_vision_time > 0 else 0
+                self.logger.info(f"🤖 AUTONOMOUS VISION - Random interval ({interval:.1f}s), taking snapshot")
+
+                if self._trigger_vision_snapshot(trigger="autonomous_random"):
+                    # Schedule next random snapshot
+                    self.next_vision_time = current_time + self._get_random_vision_interval()
+                    next_in = self.next_vision_time - current_time
+                    self.logger.debug(f"🔮 Next autonomous vision in ~{next_in:.1f}s")
+                else:
+                    # Throttled - try again in a bit
+                    self.next_vision_time = current_time + 5
+
         time.sleep(0.1)
 
     def cleanup(self):
@@ -1307,7 +1351,58 @@ class AiNode22(NevilNode):
         self.logger.info(f"AI Node v2.2 stopped: {self.processing_count} responses, "
                         f"{self.function_call_count} function calls, "
                         f"{self.vision_call_count} vision analyses "
+                        f"({self.autonomous_vision_count} autonomous) "
                         f"({self.vision_error_count} errors)")
+
+    def _trigger_vision_snapshot(self, trigger: str = "manual") -> bool:
+        """
+        Trigger a vision snapshot with throttling to prevent spam.
+
+        Args:
+            trigger: Source of the trigger (voice_direct, context_surroundings, autonomous_periodic)
+
+        Returns:
+            True if snapshot was triggered, False if throttled
+        """
+        current_time = time.time()
+        time_since_last = current_time - self.last_vision_time
+
+        # Throttle: Don't allow snapshots more frequent than min_vision_interval
+        if time_since_last < self.min_vision_interval:
+            self.logger.debug(f"⏸️ Vision throttled ({time_since_last:.1f}s < {self.min_vision_interval}s)")
+            return False
+
+        # Trigger camera snapshot
+        snap_pic_data = {
+            "requested_by": "ai_node22_vision",
+            "timestamp": current_time,
+            "trigger": trigger
+        }
+        self.publish("snap_pic", snap_pic_data)
+        self.last_vision_time = current_time
+
+        if trigger in ["autonomous_periodic", "autonomous_random"]:
+            self.autonomous_vision_count += 1
+
+        self.logger.info(f"📸 Vision snapshot triggered (source: {trigger})")
+        return True
+
+    def _get_random_vision_interval(self) -> float:
+        """
+        Calculate a randomized interval for next autonomous vision.
+
+        Returns random interval within ±randomness of base interval.
+        Example: base=45s, randomness=0.5 → returns 23-67s
+        """
+        variance = self.autonomous_vision_interval_base * self.autonomous_vision_randomness
+        min_interval = self.autonomous_vision_interval_base - variance
+        max_interval = self.autonomous_vision_interval_base + variance
+
+        # Ensure we don't go below min_vision_interval
+        min_interval = max(min_interval, self.min_vision_interval)
+
+        random_interval = random.uniform(min_interval, max_interval)
+        return random_interval
 
     def _set_system_mode(self, mode: str, reason: str):
         """Set system mode and publish change"""
@@ -1335,7 +1430,11 @@ class AiNode22(NevilNode):
             "error_count": self.error_count,
             "vision_call_count": self.vision_call_count,
             "vision_error_count": self.vision_error_count,
+            "autonomous_vision_count": self.autonomous_vision_count,
             "vision_enabled": self.openai_vision_client is not None,
+            "autonomous_vision_enabled": self.autonomous_vision_enabled,
+            "autonomous_vision_interval_base": self.autonomous_vision_interval_base,
+            "autonomous_vision_randomness": f"±{self.autonomous_vision_randomness*100:.0f}%",
             "connected": self.connection_manager.is_connected() if self.connection_manager else False,
             "gesture_library_size": len(self.gesture_functions)
         }
