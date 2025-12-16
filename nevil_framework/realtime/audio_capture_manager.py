@@ -53,7 +53,9 @@ class AudioCaptureConfig:
         vad_threshold: float = 0.02,
         vad_min_speech_duration: float = 0.3,  # Minimum speech duration in seconds
         auto_flush_ms: int = 200,
-        speech_timeout_ms: int = 1500  # Commit after 1.5s of silence
+        speech_timeout_ms: int = 1500,  # Commit after 1.5s of silence
+        gate_audio_on_silence: bool = True,  # COST OPTIMIZATION: Don't send silence to API
+        silence_padding_ms: int = 300  # Send 300ms of padding before/after speech for context
     ):
         """
         Initialize audio capture configuration.
@@ -79,6 +81,8 @@ class AudioCaptureConfig:
         self.vad_min_speech_duration = vad_min_speech_duration
         self.auto_flush_ms = auto_flush_ms
         self.speech_timeout_ms = speech_timeout_ms
+        self.gate_audio_on_silence = gate_audio_on_silence
+        self.silence_padding_ms = silence_padding_ms
 
 
 class AudioCaptureCallbacks:
@@ -179,6 +183,12 @@ class AudioCaptureManager:
         # Statistics
         self.total_samples_processed = 0
         self.total_chunks_sent = 0
+        self.total_chunks_skipped = 0  # Track chunks NOT sent due to silence gating
+
+        # Silence padding buffer (for context around speech)
+        self.padding_buffer: list = []  # Circular buffer for pre-speech padding
+        self.padding_samples = int((self.config.silence_padding_ms / 1000.0) * self.config.sample_rate)
+        self.post_speech_padding_remaining = 0  # Countdown for post-speech padding
 
         self.logger.info(
             f"AudioCaptureManager initialized: "
@@ -337,10 +347,19 @@ class AudioCaptureManager:
             self.stream.stop_stream()
 
         self._set_state(CaptureState.INACTIVE)
+        # Calculate cost savings for log
+        cost_saved_msg = ""
+        if self.total_chunks_skipped > 0:
+            total = self.total_chunks_sent + self.total_chunks_skipped
+            skipped_pct = (self.total_chunks_skipped / total) * 100 if total > 0 else 0
+            cost_saved = self.total_chunks_skipped * 0.012
+            cost_saved_msg = f", Skipped: {self.total_chunks_skipped} ({skipped_pct:.1f}% saved ${cost_saved:.4f})"
+
         self.logger.info(
             f"Audio recording stopped. "
             f"Processed: {self.total_samples_processed} samples, "
             f"Sent: {self.total_chunks_sent} chunks"
+            f"{cost_saved_msg}"
         )
 
     def pause(self) -> None:
@@ -449,19 +468,35 @@ class AudioCaptureManager:
         Returns:
             Dictionary with statistics
         """
-        return {
+        stats = {
             "state": self.state.value,
             "is_recording": self.is_recording,
             "is_paused": self.is_paused,
             "total_samples": self.total_samples_processed,
-            "total_chunks": self.total_chunks_sent,
+            "total_chunks_sent": self.total_chunks_sent,
+            "total_chunks_skipped": self.total_chunks_skipped,
             "buffer_samples": self.buffer_length,
             "buffer_ms": self.buffer_length / self.config.sample_rate * 1000,
             "vad_enabled": self.config.vad_enabled,
             "vad_speech_active": self.vad_speech_active,
             "sample_rate": self.config.sample_rate,
-            "channels": self.config.channel_count
+            "channels": self.config.channel_count,
+            "silence_gating_enabled": self.config.gate_audio_on_silence
         }
+
+        # Calculate cost savings
+        if self.total_chunks_sent + self.total_chunks_skipped > 0:
+            total_chunks = self.total_chunks_sent + self.total_chunks_skipped
+            skipped_percentage = (self.total_chunks_skipped / total_chunks) * 100
+            stats["skipped_percentage"] = f"{skipped_percentage:.1f}%"
+
+            # Estimate cost savings (assuming $0.06 per minute audio input)
+            # Each chunk is 200ms = 0.2 minutes = 0.2 * $0.06 = $0.012 per chunk
+            cost_per_chunk = 0.012
+            cost_saved = self.total_chunks_skipped * cost_per_chunk
+            stats["estimated_cost_saved_usd"] = f"${cost_saved:.4f}"
+
+        return stats
 
     def set_callbacks(self, callbacks: AudioCaptureCallbacks) -> None:
         """Update callbacks."""
@@ -590,7 +625,16 @@ class AudioCaptureManager:
             self.logger.debug("Audio processing loop ended")
 
     def _process_audio_chunk(self) -> None:
-        """Process buffered audio chunk and send."""
+        """
+        Process buffered audio chunk and send.
+
+        With silence gating enabled, only sends audio when:
+        1. Speech is active (VAD detected speech)
+        2. During padding periods (before/after speech)
+        3. VAD is disabled (sends all audio)
+
+        This can reduce API costs by 70-90% by not sending silence!
+        """
         self.logger.debug(f"📦 _process_audio_chunk called, buffer_length={self.buffer_length}")
 
         # ⚠️ CRITICAL: Check mutex BEFORE processing buffered audio
@@ -625,15 +669,50 @@ class AudioCaptureManager:
                 # Calculate volume
                 volume_level = self._calculate_volume(chunk)
 
-                # Send via callback
+                # 💰 COST OPTIMIZATION: Silence gating
+                # Determine if we should send this chunk to the API
+                should_send = True
+                skip_reason = ""
+
+                if self.config.gate_audio_on_silence and self.config.vad_enabled:
+                    # Check if we're in an "active" state where audio should be sent
+                    is_speech_active = self.vad_speech_active
+                    is_post_padding = self.post_speech_padding_remaining > 0
+
+                    if not is_speech_active and not is_post_padding:
+                        # Pure silence - don't send to API (SAVES MONEY!)
+                        should_send = False
+                        skip_reason = "silence"
+
+                        # BUT: Maintain circular padding buffer for pre-speech context
+                        # Store this chunk for potential use when speech starts
+                        self.padding_buffer.append(base64_audio)
+
+                        # Keep buffer size limited to padding duration
+                        max_padding_chunks = max(1, int(self.padding_samples / self.config.chunk_size))
+                        if len(self.padding_buffer) > max_padding_chunks:
+                            self.padding_buffer.pop(0)  # Remove oldest chunk
+
+                        self.total_chunks_skipped += 1
+                        self.logger.debug(f"💰 SKIPPED chunk (silence) - saving $$ | buffer: {len(self.padding_buffer)} chunks")
+
+                # Send via callback (always, for local monitoring)
                 if self.callbacks.on_audio_data:
                     self.callbacks.on_audio_data(base64_audio, volume_level)
 
-                # Send via connection manager
-                if self.connection_manager:
-                    self._send_audio_to_realtime(base64_audio)
+                # Send via connection manager (only if should_send)
+                if should_send:
+                    if self.connection_manager:
+                        self._send_audio_to_realtime(base64_audio)
+                    self.total_chunks_sent += 1
 
-                self.total_chunks_sent += 1
+                    # Decrement post-speech padding counter
+                    if self.post_speech_padding_remaining > 0:
+                        self.post_speech_padding_remaining -= 1
+                        self.logger.debug(f"📤 Sent post-speech padding chunk ({self.post_speech_padding_remaining} remaining)")
+                else:
+                    # Chunk was skipped - already handled above
+                    pass
 
                 # Update buffer with remainder
                 if len(remainder) > 0:
@@ -681,7 +760,7 @@ class AudioCaptureManager:
                 # Speech started
                 self.vad_speech_active = True
                 self.vad_speech_start_time = time.time()  # Track start time
-                self.logger.debug("VAD: Speech started")
+                self.logger.info("🎤 VAD: Speech started")
 
                 # ⚠️ CRITICAL: Clear API buffer at START of speech to prevent accumulation
                 # BUT ONLY if microphone is available (not during TTS playback)
@@ -695,6 +774,14 @@ class AudioCaptureManager:
                             self.logger.debug("🗑️ Cleared API audio buffer at speech start")
                         except Exception as e:
                             self.logger.error(f"Error clearing API buffer at speech start: {e}")
+
+                        # 💰 COST OPTIMIZATION: Send pre-speech padding for context
+                        # This gives the API ~300ms of audio before speech started
+                        if self.config.gate_audio_on_silence and self.padding_buffer:
+                            self.logger.info(f"📤 Sending {len(self.padding_buffer)} padding chunks for context")
+                            for padding_audio in self.padding_buffer:
+                                self._send_audio_to_realtime(padding_audio, is_padding=True)
+                            self.padding_buffer.clear()
                 else:
                     self.logger.debug("🚫 Skipping API buffer clear - mutex blocked (Nevil is speaking)")
 
@@ -712,9 +799,17 @@ class AudioCaptureManager:
                     self.vad_speech_active = False
                     self.vad_silence_frames = 0
 
+                    # 💰 COST OPTIMIZATION: Set up post-speech padding
+                    # Continue sending audio for ~300ms after speech ends (for natural cutoff)
+                    if self.config.gate_audio_on_silence:
+                        padding_chunks = max(1, int(self.config.silence_padding_ms / 200))  # 200ms per chunk
+                        self.post_speech_padding_remaining = padding_chunks
+                        self.logger.info(f"📤 VAD: Speech ended - will send {padding_chunks} more padding chunks")
+
                     # FILTER: Ignore very short speech bursts (likely noise)
                     if speech_duration < self.config.vad_min_speech_duration:
                         self.logger.debug(f"🚫 VAD: Speech too short ({speech_duration:.2f}s < {self.config.vad_min_speech_duration}s) - ignoring")
+                        self.post_speech_padding_remaining = 0  # Cancel padding for noise
                         return
 
                     # ⚠️ CRITICAL: Cooldown check to prevent rapid re-commits
@@ -812,12 +907,13 @@ class AudioCaptureManager:
                     if self.callbacks.on_vad_speech_end:
                         self.callbacks.on_vad_speech_end()
 
-    def _send_audio_to_realtime(self, base64_audio: str) -> None:
+    def _send_audio_to_realtime(self, base64_audio: str, is_padding: bool = False) -> None:
         """
         Send audio to Realtime API via connection manager.
 
         Args:
             base64_audio: Base64-encoded PCM16 audio
+            is_padding: True if this is padding audio (for logging)
         """
         if not self.connection_manager:
             self.logger.error("❌ Cannot send audio - no connection_manager!")
@@ -829,7 +925,11 @@ class AudioCaptureManager:
                 "audio": base64_audio
             }
             self.connection_manager.send_sync(event)  # Thread-safe synchronous send
-            self.logger.debug("Sent audio chunk to Realtime API")
+
+            if is_padding:
+                self.logger.debug("📤 Sent padding audio chunk to Realtime API (for context)")
+            else:
+                self.logger.debug("📤 Sent audio chunk to Realtime API")
 
         except Exception as e:
             self.logger.error(f"Error sending audio to Realtime API: {e}")

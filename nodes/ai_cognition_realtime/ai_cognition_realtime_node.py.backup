@@ -25,15 +25,11 @@ from typing import Optional, Dict, Any, List
 
 from nevil_framework.base_node import NevilNode
 from nevil_framework.chat_logger import get_chat_logger
-from nevil_framework.youtube_library import YouTubeLibrary
 from nevil_framework.realtime.realtime_connection_manager import (
     RealtimeConnectionManager,
     ConnectionConfig,
     SessionConfig
 )
-
-# Import OpenAI for vision processing (Chat Completions API)
-from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +77,6 @@ class AiNode22(NevilNode):
         # Connection manager
         self.connection_manager: Optional[RealtimeConnectionManager] = None
 
-        # OpenAI client for vision (Chat Completions API)
-        # Realtime API doesn't support vision, so we use standard API for images
-        self.openai_vision_client: Optional[OpenAI] = None
-        self.vision_model = os.getenv('NEVIL_VISION_MODEL', 'gpt-4o')  # gpt-4o or gpt-4-vision-preview
-
         # Response streaming state
         self.current_response_text = ""
         self.current_function_call = None
@@ -95,24 +86,17 @@ class AiNode22(NevilNode):
 
         # Visual data storage
         self.latest_image: Optional[Dict[str, Any]] = None
-        self.pending_vision_image: Optional[Dict[str, Any]] = None  # Queue for images arriving during responses
 
         # Statistics
         self.processing_count = 0
         self.function_call_count = 0
         self.error_count = 0
-        self.vision_call_count = 0
-        self.vision_error_count = 0
-
-        # Initialize YouTube music library BEFORE loading gestures (needed by gesture library)
-        self.youtube_library = YouTubeLibrary()
-        self.logger.info(f"YouTube library initialized with {len(self.youtube_library.library)} songs")
 
         # Load gesture library for function calling
         self._load_gesture_library()
 
     def _load_gesture_library(self):
-        """Load gesture library with single perform_gesture function (93% cost reduction)"""
+        """Load gesture library and build function definitions for Realtime API"""
         try:
             # Import gesture functions
             import sys
@@ -122,8 +106,11 @@ class AiNode22(NevilNode):
 
             import extended_gestures
 
-            # Build gesture name → function mapping (for execution)
+            # Build function definitions for all gestures
             self.gesture_functions = {}
+            self.gesture_definitions = []
+
+            # Get all gesture function names (exclude sound functions - they're handled separately)
             gesture_names = [
                 name for name in dir(extended_gestures)
                 if callable(getattr(extended_gestures, name))
@@ -134,96 +121,168 @@ class AiNode22(NevilNode):
             for gesture_name in gesture_names:
                 self.gesture_functions[gesture_name] = getattr(extended_gestures, gesture_name)
 
-            # Build gesture list string for function description
-            gesture_list = ", ".join(gesture_names)
-
-            # Create SINGLE function definition with ALL gestures
-            self.gesture_definitions = [
-                {
+                # Create function definition for OpenAI
+                self.gesture_definitions.append({
                     "type": "function",
-                    "name": "perform_gesture",
-                    "description": f"IMPORTANT: You are a physical robot - USE GESTURES FREQUENTLY to be expressive and engaging! Perform gestures while talking to bring your responses to life. Match gestures to your emotions and the conversation: wave when greeting, nod when agreeing, show excitement with spins/bounces, tilt head when curious. Be animated and physical - you're not just a voice, you're a robot with a body! Available gestures: {gesture_list}",
+                    "name": gesture_name,
+                    "description": f"Execute {gesture_name.replace('_', ' ')} gesture",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "gesture_name": {
-                                "type": "string",
-                                "description": "Name of gesture to perform (choose from the list above)"
-                            },
                             "speed": {
                                 "type": "string",
                                 "enum": ["slow", "med", "fast"],
-                                "description": "Speed: slow=gentle/thoughtful, med=normal, fast=excited/emphatic",
+                                "description": "Gesture speed (slow=thoughtful, med=normal, fast=excited)",
                                 "default": "med"
                             }
-                        },
-                        "required": ["gesture_name"]
+                        }
                     }
-                },
+                })
 
-                # Sound effects as single function
-                {
+            # Add movement functions (forward, backward, left, right)
+            movement_functions = {
+                "move_forward": "Move forward (cm, speed)",
+                "move_backward": "Move backward (cm, speed)",
+                "turn_left": "Turn left (degrees)",
+                "turn_right": "Turn right (degrees)",
+                "stop_movement": "Stop all movement"
+            }
+
+            for func_name, description in movement_functions.items():
+                self.gesture_definitions.append({
                     "type": "function",
-                    "name": "play_sound",
-                    "description": "Play a sound effect. Available: honk, rev_engine, airhorn, train_horn, wolf_howl, ghost, alien_voice, dubstep, reggae, machine_gun",
+                    "name": func_name,
+                    "description": description,
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "sound_name": {
-                                "type": "string",
-                                "description": "Name of sound to play"
-                            }
-                        },
-                        "required": ["sound_name"]
+                            "distance": {"type": "number", "description": "Distance in cm"},
+                            "speed": {"type": "number", "description": "Speed 0-50"}
+                        }
                     }
-                },
+                })
 
-                # Camera
-                {
-                    "type": "function",
-                    "name": "take_snapshot",
-                    "description": "✅ YOU HAVE WORKING VISION! Call this function to capture and analyze what your camera sees. The system will process the image and tell you exactly what's in view. Your vision WORKS and you SHOULD use it often - when exploring, when curious, when asked about surroundings, when moving to new locations, or when someone shows you something. After calling this function, you will receive a description of what your camera sees and you can talk about it naturally. BE VISUALLY ENGAGED - you're a robot with working eyes!",
-                    "parameters": {"type": "object", "properties": {}}
-                },
+            # Add camera function
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "take_snapshot",
+                "description": "Take a camera snapshot to see what's in front of you",
+                "parameters": {"type": "object", "properties": {}}
+            })
 
-                # Memory
-                {
-                    "type": "function",
-                    "name": "remember",
-                    "description": "Store a memory for later recall",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "message": {"type": "string"},
-                            "response": {"type": "string"},
-                            "category": {"type": "string", "enum": ["preference", "personal", "intense", "general"]},
-                            "importance": {"type": "number"}
+            # Add sound effect functions with proper parameters
+            sound_effects = {
+                "honk": "Honk the car horn",
+                "rev_engine": "Rev the car engine",
+                "airhorn": "Blast an air horn",
+                "train_horn": "Sound a train horn",
+                "wolf_howl": "Howl like a wolf",
+                "ghost": "Make spooky ghost sounds",
+                "alien_voice": "Alien voice effects",
+                "dubstep": "Play dubstep music",
+                "reggae": "Play reggae music",
+                "machine_gun": "Machine gun sound effect"
+            }
+
+            # Add play_sound function with sound_name parameter
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "play_sound",
+                "description": f"Play a sound effect. Available sounds: {', '.join(sound_effects.keys())}",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "sound_name": {
+                            "type": "string",
+                            "enum": list(sound_effects.keys()),
+                            "description": "Name of the sound to play: " + ", ".join([f"{k} ({v})" for k, v in sound_effects.items()])
                         },
-                        "required": ["message", "response", "category", "importance"]
-                    }
-                },
-
-                {
-                    "type": "function",
-                    "name": "recall",
-                    "description": "Recall memories using semantic search",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string"}
-                        },
-                        "required": ["query"]
-                    }
+                        "volume": {
+                            "type": "number",
+                            "description": "Volume 0-100",
+                            "default": 100
+                        }
+                    },
+                    "required": ["sound_name"]
                 }
-            ]
+            })
 
-            # Add YouTube music function
-            youtube_func = self.youtube_library.get_ai_function_definition()
-            self.gesture_definitions.append(youtube_func)
-            self.logger.info(f"✅ Added YouTube music function: {youtube_func['name']}")
+            # Add honk as standalone function
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "honk",
+                "description": "Honk the car horn - quick shortcut for play_sound('honk')",
+                "parameters": {"type": "object", "properties": {}}
+            })
 
-            self.logger.info(f"Loaded {len(self.gesture_functions)} gestures via single function (93% cost reduction)")
-            self.logger.info(f"Total functions available to AI: {len(self.gesture_definitions)}")
+            # Add rev_engine as standalone function
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "rev_engine",
+                "description": "Rev the car engine - quick shortcut for play_sound('rev_engine')",
+                "parameters": {"type": "object", "properties": {}}
+            })
+
+            # Add memory functions
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "remember",
+                "description": "Store a memory for later recall. Use this when the user shares preferences, personal information, or important moments.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "The user's message to remember"
+                        },
+                        "response": {
+                            "type": "string",
+                            "description": "Your response acknowledging the memory"
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": ["preference", "personal", "intense", "general"],
+                            "description": "Memory category: preference (likes/dislikes), personal (background/experiences), intense (memorable conversations), general (other)"
+                        },
+                        "importance": {
+                            "type": "number",
+                            "description": "Importance score 1-10 (10=critical, 8-9=important, 6-7=moderate, 4-5=general, 1-3=low)"
+                        }
+                    },
+                    "required": ["message", "response", "category", "importance"]
+                }
+            })
+
+            self.gesture_definitions.append({
+                "type": "function",
+                "name": "recall",
+                "description": "Recall memories from the past using semantic search. Use this before responding to questions about user preferences or past conversations.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query for recalling memories"
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": ["preference", "personal", "intense", "general"],
+                            "description": "Optional category filter"
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum number of memories to return (default 5)"
+                        },
+                        "min_importance": {
+                            "type": "number",
+                            "description": "Minimum importance score to return (default 3)"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            })
+
+            self.logger.info(f"Loaded {len(self.gesture_functions)} gestures + movement + camera + sounds + memory")
 
         except Exception as e:
             self.logger.error(f"Failed to load gesture library: {e}")
@@ -241,14 +300,6 @@ class AiNode22(NevilNode):
 
             if not api_key and not ephemeral_token:
                 raise ValueError("Either OPENAI_API_KEY or OPENAI_REALTIME_TOKEN must be set")
-
-            # Initialize OpenAI client for vision (Chat Completions API)
-            # Realtime API doesn't support images, so we use standard API
-            if api_key:
-                self.openai_vision_client = OpenAI(api_key=api_key, max_retries=2)
-                self.logger.info(f"✅ Vision API initialized with model: {self.vision_model}")
-            else:
-                self.logger.warning("⚠️ No OPENAI_API_KEY - vision disabled (Realtime API doesn't support images)")
 
             # Create connection configuration
             conn_config = ConnectionConfig(
@@ -469,19 +520,6 @@ class AiNode22(NevilNode):
                 self.response_start_time = None
                 self.logger.info(f"🚦 Response flag cleared (via audio_transcript_done) after {elapsed:.2f}s - ready for next command")
 
-                # Process any pending vision images that arrived during response
-                if self.pending_vision_image:
-                    pending = self.pending_vision_image
-                    self.pending_vision_image = None
-                    self.logger.info(f"🔄 Processing queued vision image: {pending['capture_id']}")
-
-                    # Create a mock message to process the queued image
-                    from types import SimpleNamespace
-                    queued_message = SimpleNamespace(data=pending)
-                    # Schedule vision processing on next event loop iteration to avoid blocking
-                    import threading
-                    threading.Timer(0.1, lambda: self.on_visual_data(queued_message, force_process=True)).start()
-
         except Exception as e:
             self.logger.error(f"Error handling audio transcript done: {e}")
 
@@ -681,102 +719,40 @@ class AiNode22(NevilNode):
         try:
             self.logger.info(f"🎬 Executing function: {function_name} with args: {args}")
 
-            # Handle gesture performance (new single function)
-            if function_name == "perform_gesture":
-                return self._handle_perform_gesture(args)
-
-            # Handle sound effects
-            elif function_name == "play_sound":
-                return self._handle_play_sound(args)
-
             # Handle camera snapshot
-            elif function_name == "take_snapshot":
+            if function_name == "take_snapshot":
                 self.logger.info("📸 Handling camera snapshot")
                 return self._handle_take_snapshot()
 
             # Handle memory functions
-            elif function_name == "remember":
+            if function_name == "remember":
                 self.logger.info("🧠 Handling memory storage")
                 return self._handle_remember(args)
 
-            elif function_name == "recall":
+            if function_name == "recall":
                 self.logger.info("🧠 Handling memory recall")
                 return self._handle_recall(args)
 
-            # Handle YouTube music streaming
-            elif function_name == "stream_youtube_music":
-                self.logger.info("🎵 Handling YouTube music streaming")
-                return self._handle_stream_youtube_music(args)
+            # Handle movement commands
+            if function_name in ["move_forward", "move_backward", "turn_left", "turn_right", "stop_movement"]:
+                self.logger.info(f"🚗 Handling movement: {function_name}")
+                return self._handle_movement(function_name, args)
 
-            else:
-                self.logger.warning(f"❌ Unknown function: {function_name}")
-                return {"status": "error", "message": f"Unknown function: {function_name}"}
+            # Handle sound functions
+            if function_name in ["play_sound", "honk", "rev_engine"]:
+                self.logger.info(f"🔊 Handling sound: {function_name}")
+                return self._handle_gesture(function_name, args)
+
+            # Handle gesture from library
+            if function_name in self.gesture_functions:
+                self.logger.info(f"🤖 Handling gesture: {function_name}")
+                return self._handle_gesture(function_name, args)
+
+            self.logger.warning(f"❌ Unknown function: {function_name}")
+            return {"status": "error", "message": f"Unknown function: {function_name}"}
 
         except Exception as e:
             self.logger.error(f"Error executing function {function_name}: {e}")
-            return {"status": "error", "message": str(e)}
-
-    def _handle_perform_gesture(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle gesture performance - AI chose gesture by name"""
-        try:
-            gesture_name = args.get('gesture_name', '')
-            speed = args.get('speed', 'med')
-
-            if not gesture_name:
-                return {"status": "error", "message": "No gesture_name provided"}
-
-            # Validate gesture exists
-            if gesture_name not in self.gesture_functions:
-                available = ", ".join(list(self.gesture_functions.keys())[:10]) + "..."
-                return {
-                    "status": "error",
-                    "message": f"Unknown gesture '{gesture_name}'. Available: {available}"
-                }
-
-            # Build action string
-            action = f"{gesture_name}:{speed}"
-            self.logger.info(f"🤖 AI chose gesture: {action}")
-
-            # Publish gesture
-            robot_action_data = {
-                "actions": [action],
-                "source_text": "ai_gesture",
-                "mood": "neutral",
-                "priority": 100,
-                "timestamp": time.time()
-            }
-
-            if self.publish("robot_action", robot_action_data):
-                return {"status": "success", "gesture": action}
-            else:
-                return {"status": "error", "message": "Failed to publish gesture"}
-
-        except Exception as e:
-            self.logger.error(f"Error performing gesture: {e}")
-            return {"status": "error", "message": str(e)}
-
-    def _handle_play_sound(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle sound effect playback"""
-        try:
-            sound_name = args.get('sound_name', 'honk')
-            self.logger.info(f"🔊 AI chose sound: {sound_name}")
-
-            # Publish sound action
-            robot_action_data = {
-                "actions": [f"play_sound {sound_name}"],
-                "source_text": "ai_sound",
-                "mood": "neutral",
-                "priority": 100,
-                "timestamp": time.time()
-            }
-
-            if self.publish("robot_action", robot_action_data):
-                return {"status": "success", "sound": sound_name}
-            else:
-                return {"status": "error", "message": "Failed to publish sound"}
-
-        except Exception as e:
-            self.logger.error(f"Error playing sound: {e}")
             return {"status": "error", "message": str(e)}
 
     def _handle_gesture(self, gesture_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -958,26 +934,6 @@ class AiNode22(NevilNode):
             self.logger.error(f"Error handling recall: {e}")
             return {"status": "error", "message": str(e)}
 
-    def _handle_stream_youtube_music(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle YouTube music streaming"""
-        try:
-            category = args.get('category')
-            mood = args.get('mood')
-
-            self.logger.info(f"🎵 Streaming YouTube music: category={category}, mood={mood}")
-
-            # Stream audio via youtube library
-            result = self.youtube_library.stream_audio(
-                category=category,
-                mood=mood
-            )
-
-            return result
-
-        except Exception as e:
-            self.logger.error(f"Error in _handle_stream_youtube_music: {e}")
-            return {"status": "error", "message": str(e)}
-
     def _on_response_done(self, event):
         """Handle complete response"""
         try:
@@ -992,19 +948,6 @@ class AiNode22(NevilNode):
                     self.connection_manager.response_in_progress = False
                 self.response_start_time = None
                 self.logger.info(f"🚦 Response flag cleared after {elapsed:.2f}s - ready for next command")
-
-                # Process any pending vision images that arrived during response
-                if self.pending_vision_image:
-                    pending = self.pending_vision_image
-                    self.pending_vision_image = None
-                    self.logger.info(f"🔄 Processing queued vision image: {pending['capture_id']}")
-
-                    # Create a mock message to process the queued image
-                    from types import SimpleNamespace
-                    queued_message = SimpleNamespace(data=pending)
-                    # Schedule vision processing on next event loop iteration to avoid blocking
-                    import threading
-                    threading.Timer(0.1, lambda: self.on_visual_data(queued_message, force_process=True)).start()
             else:
                 self.logger.warning("⚠️ Response done event but flag was already False")
 
@@ -1045,46 +988,6 @@ class AiNode22(NevilNode):
             self.current_conversation_id = conversation_id
 
             self.logger.info(f"Voice command: '{text}' (conf={confidence:.2f})")
-
-            # ========================================================================
-            # 🎥 VISION INTENT DETECTION (NOT relying on function calling!)
-            # ========================================================================
-            # The Realtime API model knows it doesn't support images natively,
-            # so it won't call take_snapshot() even though our hybrid system works.
-            # Solution: Detect vision intents and trigger camera ourselves!
-
-            text_lower = text.lower()
-
-            vision_keywords = [
-                "what do you see", "what can you see", "what are you looking at",
-                "what's in front", "look at", "describe what you see",
-                "tell me what you see", "what do you observe", "what's around you",
-                "look around", "take a look", "show me what you see", "check your camera"
-            ]
-
-            if any(keyword in text_lower for keyword in vision_keywords):
-                self.logger.info(f"🎥 VISION INTENT detected - bypassing function calling, triggering camera directly")
-
-                # Add user's question to conversation
-                if self.connection_manager and self.connection_manager.is_connected():
-                    self.connection_manager.send_sync({
-                        "type": "conversation.item.create",
-                        "item": {
-                            "type": "message",
-                            "role": "user",
-                            "content": [{"type": "input_text", "text": text}]
-                        }
-                    })
-
-                # Trigger camera directly (NOT via function call)
-                self.publish("snap_pic", {
-                    "requested_by": "ai_node22_intent_detection",
-                    "timestamp": time.time(),
-                    "trigger": "voice_intent"
-                })
-
-                self.logger.info("⏸️ Waiting for vision data before responding...")
-                return  # Vision handler will inject description and trigger response
 
             # Check if response already in progress
             if self.response_in_progress:
@@ -1136,16 +1039,8 @@ class AiNode22(NevilNode):
         except Exception as e:
             self.logger.error(f"Error processing voice command: {e}")
 
-    def on_visual_data(self, message, force_process=False):
-        """
-        Handle visual data from camera using hybrid approach:
-        - Use Chat Completions API for vision (Realtime API doesn't support images)
-        - Inject vision analysis back into Realtime conversation as text
-
-        Args:
-            message: Message containing image data
-            force_process: If True, process immediately even if response in progress (for queued images)
-        """
+    def on_visual_data(self, message):
+        """Handle visual data from camera"""
         try:
             image_data = message.data.get("image_data", "")
             capture_id = message.data.get("capture_id", "")
@@ -1159,129 +1054,48 @@ class AiNode22(NevilNode):
                     "timestamp": timestamp
                 }
 
-                self.logger.info(f"📸 Received visual data: {capture_id} (force_process={force_process})")
+                self.logger.info(f"Received visual data: {capture_id}")
 
-                # Check if vision is available
-                if not self.openai_vision_client:
-                    self.logger.warning("⚠️ Vision client not available - skipping image analysis")
+                # Check if response already in progress
+                if self.response_in_progress:
+                    self.logger.warning(f"⏳ Response in progress, ignoring visual data: {capture_id}")
                     return
 
-                # Don't process if already responding - queue for later (UNLESS force_process=True)
-                if self.response_in_progress and not force_process:
-                    self.logger.info(f"⏳ Response in progress - queuing image for processing after response: {capture_id}")
-                    self.pending_vision_image = {
-                        "data": image_data,
-                        "capture_id": capture_id,
-                        "timestamp": timestamp
-                    }
-                    return
-
-                # If force_process but response in progress, log warning but proceed
-                if self.response_in_progress and force_process:
-                    self.logger.warning(f"⚠️ Force processing queued image {capture_id} even though response in progress")
-
-                # Use Chat Completions API to analyze the image
-                # Realtime API doesn't support images, so we use standard API
-                try:
-                    self.logger.info(f"🔍 Analyzing image with {self.vision_model}...")
-
-                    # Build vision prompt
-                    # Describe the scene objectively - Nevil will interpret it in his own voice
-                    vision_prompt = (
-                        "Describe this camera view objectively in 2-3 concise sentences. "
-                        "Be specific about: objects, people, colors, spatial relationships, and notable details. "
-                        "Format: Just describe what's visible, like a camera feed description. "
-                        "Example: 'A wooden desk with a laptop and red mug. Natural lighting from a window on the left.'"
-                    )
-
-                    # Call Chat Completions API with vision
-                    # Note: Using max_tokens=200 for detailed descriptions, temperature=0.7 for natural language
-                    response = self.openai_vision_client.chat.completions.create(
-                        model=self.vision_model,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": vision_prompt
-                                    },
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/jpeg;base64,{image_data}",
-                                            "detail": "low"  # Use low detail for faster/cheaper processing (65 tokens vs 1105 for high)
-                                        }
-                                    }
-                                ]
-                            }
-                        ],
-                        max_tokens=200,  # Increased from 150 to allow more detailed descriptions
-                        temperature=0.7,
-                        timeout=10.0  # 10 second timeout to prevent hanging
-                    )
-
-                    self.vision_call_count += 1
-
-                    # Extract vision analysis
-                    if response and response.choices and response.choices[0].message.content:
-                        vision_description = response.choices[0].message.content.strip()
-                        self.logger.info(f"👁️ Vision analysis: {vision_description}")
-
-                        # Inject vision description into Realtime conversation context
-                        # CRITICAL: Frame this as information ABOUT Nevil's camera, not from the user
-                        # Make it crystal clear this is what HIS camera sees
-                        if self.connection_manager and self.connection_manager.is_connected():
-                            # Add vision as system-style context informing Nevil what his camera sees
-                            # Use clear, direct language: "Your camera sees: ..."
-                            self.connection_manager.send_sync({
-                                "type": "conversation.item.create",
-                                "item": {
-                                    "type": "message",
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "input_text",
-                                            "text": f"[SYSTEM: Your camera is showing you this view: {vision_description}]"
-                                        }
-                                    ]
-                                }
-                            })
-
-                            # Only trigger a response if not already in progress
-                            # If response is already happening, vision description will be available for next interaction
-                            if not self.response_in_progress:
-                                # Mark response as in progress
-                                self.response_in_progress = True
-                                self.response_start_time = time.time()
-                                if self.connection_manager:
-                                    self.connection_manager.response_in_progress = True
-                                self.logger.debug("🚦 Response flag set to in_progress (vision)")
-
-                                # Trigger response - the user's question is already in conversation
-                                # No need to add another prompt
-                                self.connection_manager.send_sync({
-                                    "type": "response.create"
-                                })
-
-                                self._set_system_mode("thinking", "processing_vision")
-                                self.logger.info(f"✅ Vision context provided, triggering response to user's question: {capture_id}")
-                            else:
-                                self.logger.info(f"✅ Vision analysis added to conversation context (response in progress): {capture_id}")
-
+                # Send image to Realtime API for multimodal processing
+                if self.connection_manager and self.connection_manager.is_connected():
+                    # Format image data as data URL if it's base64
+                    if not image_data.startswith("data:"):
+                        # Assume JPEG if not specified
+                        image_url = f"data:image/jpeg;base64,{image_data}"
                     else:
-                        self.logger.error("No valid vision response from API")
+                        image_url = image_data
 
-                except Exception as vision_error:
-                    self.vision_error_count += 1
-                    self.logger.error(f"Vision API error ({self.vision_error_count} total): {vision_error}")
-                    self.logger.exception("Full vision error traceback:")
+                    self.connection_manager.send_sync({
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_url
+                                    }
+                                }
+                            ]
+                        }
+                    })
 
-                    # If we have too many consecutive errors, disable vision temporarily
-                    if self.vision_error_count > 5:
-                        self.logger.error(f"⚠️ Too many vision errors ({self.vision_error_count}), consider checking API key and quota")
+                    # Mark response as in progress before triggering
+                    self.response_in_progress = True
+                    self.logger.debug("🚦 Response flag set to in_progress (visual)")
 
-                    # Don't crash - just skip this image and continue operating
+                    # Trigger vision response
+                    self.connection_manager.send_sync({
+                        "type": "response.create"
+                    })
+
+                    self._set_system_mode("thinking", "processing_image")
 
         except Exception as e:
             self.logger.error(f"Error handling visual data: {e}")
@@ -1305,9 +1119,7 @@ class AiNode22(NevilNode):
             self.connection_manager.destroy()
 
         self.logger.info(f"AI Node v2.2 stopped: {self.processing_count} responses, "
-                        f"{self.function_call_count} function calls, "
-                        f"{self.vision_call_count} vision analyses "
-                        f"({self.vision_error_count} errors)")
+                        f"{self.function_call_count} function calls")
 
     def _set_system_mode(self, mode: str, reason: str):
         """Set system mode and publish change"""
@@ -1329,13 +1141,9 @@ class AiNode22(NevilNode):
         stats = {
             "model": self.model,
             "voice": self.voice,
-            "vision_model": self.vision_model,
             "processing_count": self.processing_count,
             "function_call_count": self.function_call_count,
             "error_count": self.error_count,
-            "vision_call_count": self.vision_call_count,
-            "vision_error_count": self.vision_error_count,
-            "vision_enabled": self.openai_vision_client is not None,
             "connected": self.connection_manager.is_connected() if self.connection_manager else False,
             "gesture_library_size": len(self.gesture_functions)
         }

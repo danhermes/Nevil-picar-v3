@@ -1,0 +1,81 @@
+{
+  "library": [
+    {
+      "name": "lofi_study",
+      "description": "Lo-fi hip hop beats for studying and relaxing",
+      "url": "https://www.youtube.com/watch?v=jfKfPfyJRdk",
+      "category": "lofi hip hop",
+      "mood": "calm"
+    },
+    {
+      "name": "jazz_cafe",
+      "description": "Smooth jazz music for a relaxing atmosphere",
+      "url": "https://www.youtube.com/watch?v=Dx5qFachd3A",
+      "category": "smooth jazz",
+      "mood": "relaxed"
+    },
+    {
+      "name": "classical_piano",
+      "description": "Beautiful classical piano music",
+      "url": "https://www.youtube.com/watch?v=jgpJVI3tDbY",
+      "category": "classical piano",
+      "mood": "elegant"
+    },
+    {
+      "name": "ocean_sounds",
+      "description": "Peaceful ocean waves for relaxation",
+      "url": "https://www.youtube.com/watch?v=V1bFr2SWP1I",
+      "category": "ocean waves",
+      "mood": "peaceful"
+    },
+    {
+      "name": "rain_sounds",
+      "description": "Gentle rain sounds for sleeping or focusing",
+      "url": "https://www.youtube.com/watch?v=q76bMs-NwRk",
+      "category": "rain sounds",
+      "mood": "calm"
+    },
+    {
+      "name": "upbeat_pop",
+      "description": "Upbeat pop music for energy and motivation",
+      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "category": "pop",
+      "mood": "energetic"
+    },
+    {
+      "name": "meditation_music",
+      "description": "Calming meditation music",
+      "url": "https://www.youtube.com/watch?v=1ZYbU82GVz4",
+      "category": "ambient",
+      "mood": "meditative"
+    },
+    {
+      "name": "nature_sounds",
+      "description": "Forest birds and nature sounds",
+      "url": "https://www.youtube.com/watch?v=xNN7iTA57jM",
+      "category": "nature sounds",
+      "mood": "peaceful"
+    },
+    {
+      "name": "holly_jolly_christmas",
+      "description": "A Holly Jolly Christmas - festive holiday music",
+      "url": "https://youtu.be/P_dI6fVZwd0?si=HLFKIUIPN-Q3RMsR",
+      "category": "christmas",
+      "mood": "festive"
+    },
+    {
+      "name": "snow_heat_miser",
+      "description": "Snow Miser/Heat Miser - classic Christmas songs",
+      "url": "https://youtu.be/_SGlPnA_iCk?si=jm5L-gkAFPHhDzI4",
+      "category": "christmas",
+      "mood": "festive"
+    },
+    {
+      "name": "christmas_in_hollis",
+      "description": "Run-DMC - Christmas in Hollis - classic hip hop Christmas anthem",
+      "url": "https://youtu.be/OR07r0ZMFb8?si=tET7X1zNK3kmeaAf",
+      "category": "christmas rap",
+      "mood": "festive"
+    }
+  ]
+}

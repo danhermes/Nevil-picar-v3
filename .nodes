@@ -16,11 +16,29 @@ environment:
   NEVIL_REALTIME_ENABLED: "true"
 
 launch:
-  # Phase 1: Realtime API nodes (streaming) + navigation + visual + LED indicator + memory
+  # Phase 1: Core nodes - Realtime API nodes (streaming) + navigation + visual + LED indicator + memory
+  # SLAM nodes are run separately (see docs/SLAM_INTEGRATION.md)
   startup_order: ["led_indicator", "memory", "speech_recognition_realtime", "speech_synthesis_realtime", "ai_cognition_realtime", "navigation", "visual"]
   parallel_launch: false
   wait_for_healthy: true
   ready_timeout: 30.0
+
+# SLAM Configuration
+slam:
+  enabled: false  # Set to true to enable SLAM features
+  nodes:
+    slam_localization:
+      path: "nodes/slam/slam_localization_node.py"
+      description: "SLAM localization using external stella_vslam"
+      active: false
+    slam_room_mapping:
+      path: "nodes/slam/room_mapping_node.py"
+      description: "Room detection and mapping from SLAM landmarks"
+      active: false
+    slam_navigation:
+      path: "nodes/slam/slam_navigation_node.py"
+      description: "A* path planning for room-to-room navigation"
+      active: false
 
 # OpenAI API key will be loaded from system environment
 # Realtime API WebSocket connection managed by RealtimeConnectionManager
