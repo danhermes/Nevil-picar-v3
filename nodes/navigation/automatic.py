@@ -19,10 +19,13 @@ decisions based on mood profiles. No hardcoded behaviors - pure AI autonomy.
 - Only 30% chance to change when threshold reached
 - Speech frequency varies by mood (15%-65%)
 
-### Vision Integration
-- High vision usage: 70% when Nevil will speak, 35% when silent
-- Enables environment-responsive behavior even during quiet periods
-- GPT sees and reacts to surroundings in autonomous mode
+### Vision Integration - ENHANCED OBSERVATION MODE
+- 🔍 CORE FEATURE: Looking and commenting on environment is now IMPORTANT
+- High vision usage: 80% base + up to 15% curiosity boost (up to 95% total)
+- Observation and commentary are central to "go play" autonomous behavior
+- GPT actively encouraged to look around and describe what it sees
+- Curiosity trait influences observation frequency and depth
+- Tracks observation statistics (vision cycles, observation comments)
 
 ### Listening Windows (5-20 seconds)
 - Mood-based duration: zippy moods = ~6s (impatient), lonely moods = ~17s (patient)
@@ -121,10 +124,16 @@ class Automatic:
         # Increase this to make Nevil slower overall (2.0 = 2x slower, 3.0 = 3x slower)
         self.auto_speed_slowdown = 2.5  # Default 2.5x slower than normal
 
+        # Observation tracking - NEW for enhanced vision mode
+        self.total_cycles = 0
+        self.vision_cycles = 0
+        self.observation_comments = 0  # Cycles where vision + speech happened
+
         print(f"[AUTOMATIC] Initialized with mood: {self.current_mood_name}")
         print(f"[AUTOMATIC] Speed slowdown factor: {self.auto_speed_slowdown}x")
         print(f"[AUTOMATIC] Listening windows: mood-based (5-20s depending on energy/sociability)")
         print(f"[AUTOMATIC] Next mood change in ~{self.mood_change_threshold} cycles")
+        print(f"[AUTOMATIC] 👁️  OBSERVATION MODE: Vision usage at 80-95% (curiosity-boosted)")
 
     def run_idle_loop(self, cycles=1):
         """
@@ -139,6 +148,10 @@ class Automatic:
         print("\n" + "="*60)
         print(f"[AUTOMATIC MODE] 🤖 Active - Mood: {self.current_mood_name.upper()}")
         print(f"[AUTOMATIC MODE] Cycle: {self.cycles_since_mood_change}/{self.mood_change_threshold}")
+        print(f"[AUTOMATIC MODE] 👁️  OBSERVATION MODE: Looking & commenting is a KEY behavior")
+        curiosity = self.current_mood.get('curiosity', 50)
+        vision_chance = min(0.95, 0.80 + (curiosity / 100) * 0.15)
+        print(f"[AUTOMATIC MODE] 📊 Vision usage: ~{vision_chance*100:.0f}% (base 80% + {curiosity} curiosity)")
         print(f"[AUTOMATIC MODE] Commands: 'Stop auto' to exit, 'Set mood [name]' to change")
         print("="*60)
 
@@ -160,6 +173,11 @@ class Automatic:
             # Determine if we should use vision (based on mood and activity)
             use_vision = self.should_use_vision()
 
+            # Track observation cycles
+            self.total_cycles += 1
+            if use_vision:
+                self.vision_cycles += 1
+
             # Get GPT-driven autonomous response
             prompt = self.get_autonomous_prompt(use_vision)
 
@@ -168,6 +186,7 @@ class Automatic:
                 break
 
             print(f"\n[AUTOMATIC MODE] 🎲 Calling GPT (vision: {use_vision}, speech_freq: {self.current_mood['speech_freq']:.0%})")
+            print(f"[AUTOMATIC MODE] 📊 Observation stats: {self.vision_cycles}/{self.total_cycles} cycles with vision ({self.vision_cycles/self.total_cycles*100:.0f}%)")
             actions, message = self.nevil.call_GPT(prompt, use_image=use_vision)
 
             # Check auto_enabled before processing response
@@ -179,6 +198,10 @@ class Automatic:
             # No need to call handle_TTS_generation() here as it would duplicate the request
             if message:
                 print(f"[AUTOMATIC MODE] 💬 Speaking: \"{message}\"")
+                # Track observation comments (vision + speech)
+                if use_vision:
+                    self.observation_comments += 1
+                    print(f"[AUTOMATIC MODE] 👁️💬 Observation comment! ({self.observation_comments} total)")
             else:
                 print(f"[AUTOMATIC MODE] 🤫 Silent cycle")
 
@@ -230,23 +253,32 @@ class Automatic:
         """
         Determine if vision should be used this cycle.
 
-        Vision usage depends on whether Nevil will likely speak:
-        - When speaking (based on mood speech_freq): 70% use vision
-        - When silent: 35% use vision
+        Vision is now a CORE FEATURE of automatic mode - looking at and
+        commenting on the environment is an important behavior.
 
-        This creates environment-responsive behavior even in silence.
+        Base vision usage: 80% (much higher than before)
+        Curiosity boost: Up to +15% based on mood
+
+        This makes observation and commentary a central part of "go play" mode.
         """
         speech_freq = self.current_mood.get('speech_freq', 0.50)
+        curiosity = self.current_mood.get('curiosity', 50)
 
-        # Estimate if this will be a speaking cycle
-        will_likely_speak = random.random() < speech_freq
+        # Base vision usage: 80% of the time (up from 70%/35%)
+        base_vision_chance = 0.80
 
-        if will_likely_speak:
-            # Speaking cycles use vision 70% of the time
-            use_vision = random.random() < 0.70
-        else:
-            # Silent cycles use vision 35% of the time
-            use_vision = random.random() < 0.35
+        # Curiosity boost: curious moods look around more
+        # curiosity ranges 20-85, so this adds 0-13% boost
+        curiosity_boost = (curiosity / 100) * 0.15
+
+        # Total vision chance
+        vision_chance = base_vision_chance + curiosity_boost
+        vision_chance = min(0.95, vision_chance)  # Cap at 95%
+
+        use_vision = random.random() < vision_chance
+
+        if use_vision:
+            print(f"[AUTOMATIC MODE] 👁️  Using vision this cycle (chance: {vision_chance:.0%})")
 
         return use_vision
 
@@ -254,24 +286,42 @@ class Automatic:
         """
         Generate prompt for autonomous behavior.
 
-        Simple prompt that references mood and guidelines in system prompt.
-        No hardcoded examples or suggestions - let GPT decide based on mood.
+        IMPORTANT: Observation and commentary are now CORE behaviors in autonomous mode.
+        Vision is used ~80-95% of the time, and Nevil should actively look around and
+        comment on what he sees.
         """
         speech_freq = self.current_mood.get('speech_freq', 0.50)
+        curiosity = self.current_mood.get('curiosity', 50)
         speech_pct = int(speech_freq * 100)
 
-        prompt = f"You are in autonomous mode with mood '{self.current_mood_name}' (talk {speech_pct}% of time). "
-        # Encourage alternating between exploration and contemplation
-        prompt += "Alternate between active exploration and quiet contemplation. "
-        prompt += "Sometimes explore actively (scout_mode, look around, move), other times just subtle gestures or stillness. "
-        prompt += "Vary your behavior - don't always do the same thing. "
-        # Add gentle speed guidance - prefer slow/med over fast
-        prompt += "When you do move, use thoughtful speeds (:slow or :med preferred). "
+        prompt = f"You are in autonomous 'go play' mode with mood '{self.current_mood_name}' (talk {speech_pct}% of time). "
 
         if use_vision:
-            prompt += "You can see your environment - explore it or observe quietly. "
+            # VISION MODE: Emphasize observation and commentary
+            prompt += "🔍 IMPORTANT: You can SEE your environment right now. "
+            prompt += "Look around and COMMENT on what you observe - this is a key part of your autonomous behavior. "
+            prompt += "Notice interesting things: objects, colors, artwork, people, pets, changes in the room. "
+
+            # Mood-based observation style
+            if curiosity > 70:
+                prompt += "Your curiosity is HIGH - examine things closely, ask questions about what you see. "
+            elif curiosity > 40:
+                prompt += "Observe your surroundings with moderate interest. "
+            else:
+                prompt += "Take casual glances around, noting what catches your eye. "
+
+            # Encourage varied observation behavior
+            prompt += "You might: look around (scout_mode), examine something specific, comment on changes, "
+            prompt += "point out interesting details, ask about what you see, or just appreciate the view. "
+
         else:
-            prompt += "What's on your mind? Explore, think, or just be. "
+            # NO VISION: Still encourage exploratory behavior
+            prompt += "You can't see right now, but you can still explore and contemplate. "
+            prompt += "What's on your mind? Move around, think aloud, or just be present. "
+
+        # General guidance
+        prompt += "Vary your behavior - alternate between active exploration and quiet moments. "
+        prompt += "Use thoughtful movement speeds (:slow or :med preferred). "
 
         return prompt
 
@@ -310,12 +360,26 @@ class Automatic:
             # Perform transition behavior
             self.mood_transition()
 
-            # Print mood info
+            # Print mood info with observation characteristics
+            curiosity = self.current_mood.get('curiosity', 50)
+            vision_chance = min(0.95, 0.80 + (curiosity / 100) * 0.15)
+
             print("\n" + "="*60)
             print(f"[AUTOMATIC MODE] 🎭 New Mood: {mood_name.upper()}")
             print(f"[AUTOMATIC MODE] 📊 Energy: {self.current_mood['energy']}, "
                   f"Curiosity: {self.current_mood['curiosity']}, "
                   f"Speech: {self.current_mood['speech_freq']:.0%}")
+            print(f"[AUTOMATIC MODE] 👁️  Vision Usage: ~{vision_chance*100:.0f}% (observation-focused)")
+
+            # Describe observation style based on curiosity
+            if curiosity > 70:
+                obs_style = "HIGHLY curious - will examine things closely and ask questions"
+            elif curiosity > 40:
+                obs_style = "Moderately observant - notices interesting details"
+            else:
+                obs_style = "Casual observer - takes occasional glances"
+            print(f"[AUTOMATIC MODE] 🔍 Observation Style: {obs_style}")
+
             print("[AUTOMATIC MODE] 📝 Available Commands:")
             print("  • 'Stop auto' or 'Come back' - Exit automatic mode")
             print("  • 'Set mood [playful/curious/sleepy/etc]' - Change personality")
@@ -354,3 +418,32 @@ class Automatic:
         # Queue the actions for the navigation node to pick up
         with self.nevil.action_lock:
             self.nevil.actions_to_be_done = actions
+
+    def get_observation_stats(self):
+        """
+        Get observation statistics for monitoring and debugging.
+
+        Returns:
+            dict: Observation stats including vision usage rate and comment frequency
+        """
+        if self.total_cycles == 0:
+            return {
+                "total_cycles": 0,
+                "vision_cycles": 0,
+                "vision_rate": 0.0,
+                "observation_comments": 0,
+                "comment_rate": 0.0
+            }
+
+        vision_rate = self.vision_cycles / self.total_cycles
+        comment_rate = self.observation_comments / self.total_cycles if self.total_cycles > 0 else 0.0
+
+        return {
+            "total_cycles": self.total_cycles,
+            "vision_cycles": self.vision_cycles,
+            "vision_rate": vision_rate,
+            "observation_comments": self.observation_comments,
+            "comment_rate": comment_rate,
+            "current_mood": self.current_mood_name,
+            "curiosity": self.current_mood.get('curiosity', 50)
+        }

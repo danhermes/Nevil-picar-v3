@@ -219,6 +219,32 @@ subscribes:
         required: true
         description: "Unix timestamp"
 
+  - topic: "speaking_status"
+    message_type: "SpeakingStatus"
+    callback: "on_speaking_status"
+    description: "Speech synthesis status for triggering idle animations during speech"
+    schema:
+      speaking:
+        type: "boolean"
+        required: true
+        description: "Whether Nevil is currently speaking"
+      text:
+        type: "string"
+        required: false
+        description: "Text being spoken"
+      voice:
+        type: "string"
+        required: false
+        description: "Voice being used"
+      progress:
+        type: "float"
+        required: false
+        description: "Speech progress (0.0-1.0)"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
 # Node configuration
 configuration:
   # Movement settings

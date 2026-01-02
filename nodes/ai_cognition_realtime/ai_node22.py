@@ -69,9 +69,9 @@ class AiNode22(NevilNode):
         self.model = os.getenv('NEVIL_REALTIME_MODEL',
                               self.realtime_config.get('model', 'gpt-4o-realtime-preview-2024-12-17'))
         self.voice = os.getenv('NEVIL_REALTIME_VOICE',
-                              self.realtime_config.get('voice', 'alloy'))
+                              self.realtime_config.get('voice', 'echo'))
         self.temperature = float(os.getenv('NEVIL_REALTIME_TEMPERATURE',
-                                          self.realtime_config.get('temperature', 0.8)))
+                                          self.realtime_config.get('temperature', 0.6)))
         self.modalities = self.realtime_config.get('modalities', ['text', 'audio'])
 
         # Get system instructions from config

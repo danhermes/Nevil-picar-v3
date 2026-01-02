@@ -73,8 +73,8 @@ subscribes:
         type: "string"
         required: false
         description: "Voice to use"
-        default: "alloy"
-        allowed: ["alloy", "echo", "shimmer"]
+        default: "echo"
+        allowed: ["alloy", "echo", "shimmer", "ash", "ballad", "coral", "sage", "verse"]
       conversation_id:
         type: "string"
         required: false
@@ -140,7 +140,7 @@ configuration:
   # TTS settings - Realtime API
   tts:
     model: "gpt-4o-realtime-preview-2024-12-17"  # Realtime API model
-    default_voice: "alloy"    # Realtime API voice
+    default_voice: "echo"     # Realtime API voice - smooth, cool, deeper tone
     output_format: "pcm16"    # 16-bit PCM, 24kHz mono
     sample_rate: 24000        # Realtime API audio format
 
