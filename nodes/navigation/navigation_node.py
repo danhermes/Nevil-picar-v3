@@ -15,7 +15,8 @@ from typing import Dict, Any, List, Optional
 from nevil_framework.base_node import NevilNode
 from nevil_framework.busy_state import busy_state
 from nevil_framework.microphone_mutex import microphone_mutex
-from nevil_framework.speech_idle_animator import SpeechIdleAnimator
+# COMMENTED OUT: Using original SpeechAnimationManager instead
+# from nevil_framework.speech_idle_animator import SpeechIdleAnimator
 from robot_hat import reset_mcu
 
 # Import Automatic module for autonomous behavior
@@ -129,8 +130,9 @@ class NavigationNode(NevilNode):
         self.auto_response_lock = threading.Lock()
 
         # Speech idle animator - provides subtle movement while talking
-        self.idle_animator = SpeechIdleAnimator(get_car_callback=lambda: self.car)
-        self.idle_animator.set_animation_intensity("expressive")  # More animated while talking
+        # COMMENTED OUT: Using original SpeechAnimationManager instead
+        # self.idle_animator = SpeechIdleAnimator(get_car_callback=lambda: self.car)
+        # self.idle_animator.set_animation_intensity("expressive")  # More animated while talking
 
     def initialize(self):
         """Initialize navigation and hardware"""
@@ -735,32 +737,39 @@ class NavigationNode(NevilNode):
         except Exception as e:
             self.logger.error(f"Error handling mood change: {e}")
 
-    def on_speaking_status(self, message):
-        """
-        Handle speaking status messages to trigger idle animations during speech.
-
-        When Nevil starts speaking, we trigger subtle movements (head, wheels) to make
-        him appear more lifelike and animated. When speech ends, we stop the animations.
-        """
-        try:
-            is_speaking = message.data.get('speaking', False)
-            text = message.data.get('text', '')
-
-            if is_speaking:
-                self.logger.info(f"🎬 Nevil started speaking: '{text[:50]}'... - Starting idle animations")
-                try:
-                    self.idle_animator.start_animation()
-                except Exception as start_err:
-                    self.logger.error(f"Failed to start idle animation: {start_err}")
-            else:
-                self.logger.info(f"🎬 Nevil stopped speaking - Stopping idle animations")
-                try:
-                    self.idle_animator.stop_animation()
-                except Exception as stop_err:
-                    self.logger.error(f"Failed to stop idle animation: {stop_err}")
-
-        except Exception as e:
-            self.logger.error(f"Error handling speaking status: {e}", exc_info=True)
+    # COMMENTED OUT: Using original SpeechAnimationManager instead
+    # def on_speaking_status(self, message):
+    #     """
+    #     Handle speaking status messages to trigger idle animations during speech.
+    #
+    #     When Nevil starts speaking, we trigger subtle movements (head, wheels) to make
+    #     him appear more lifelike and animated. When speech ends, we stop the animations.
+    #     """
+    #     try:
+    #         is_speaking = message.data.get('speaking', False)
+    #         text = message.data.get('text', '')
+    #
+    #         self.logger.info(f"📨 Received speaking_status: speaking={is_speaking}, text='{text[:30]}'...")
+    #         self.logger.info(f"🤖 Car available: {self.car is not None}")
+    #         self.logger.info(f"🎬 Animator status: is_animating={self.idle_animator.is_animating}")
+    #
+    #         if is_speaking:
+    #             self.logger.info(f"🎬 STARTING idle animations for speech: '{text[:50]}'...")
+    #             try:
+    #                 self.idle_animator.start_animation()
+    #                 self.logger.info(f"✅ Idle animation started successfully")
+    #             except Exception as start_err:
+    #                 self.logger.error(f"❌ Failed to start idle animation: {start_err}", exc_info=True)
+    #         else:
+    #             self.logger.info(f"🛑 STOPPING idle animations (speech ended)")
+    #             try:
+    #                 self.idle_animator.stop_animation()
+    #                 self.logger.info(f"✅ Idle animation stopped successfully")
+    #             except Exception as stop_err:
+    #                 self.logger.error(f"❌ Failed to stop idle animation: {stop_err}", exc_info=True)
+    #
+    #     except Exception as e:
+    #         self.logger.error(f"❌ Error handling speaking status: {e}", exc_info=True)
 
     def get_navigation_stats(self):
         """Get navigation statistics"""
@@ -1055,12 +1064,13 @@ class NavigationNode(NevilNode):
             self.action_thread.join(timeout=2.0)
 
         # Stop idle animator
-        if hasattr(self, 'idle_animator'):
-            try:
-                self.idle_animator.cleanup()
-                self.logger.info("Idle animator stopped")
-            except Exception as e:
-                self.logger.warning(f"Error stopping idle animator: {e}")
+        # COMMENTED OUT: Using original SpeechAnimationManager instead
+        # if hasattr(self, 'idle_animator'):
+        #     try:
+        #         self.idle_animator.cleanup()
+        #         self.logger.info("Idle animator stopped")
+        #     except Exception as e:
+        #         self.logger.warning(f"Error stopping idle animator: {e}")
 
         # Reset hardware
         if self.car:

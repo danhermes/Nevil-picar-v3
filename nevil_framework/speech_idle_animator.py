@@ -48,7 +48,7 @@ class SpeechIdleAnimator:
         self.wheel_angle_range = 4  # ±4 degrees for gentle rocking
 
         # Timing parameters
-        self.movement_interval = 0.3  # Update every 300ms (relaxed, laid-back pace)
+        self.movement_interval = 0.27  # Update every 270ms (expressive but smooth pace)
         self.phase = 0  # Animation phase for smooth transitions
 
         # Base positions (will be set when animation starts)
@@ -143,18 +143,18 @@ class SpeechIdleAnimator:
 
                 # Generate smooth motion using sine waves with different phases
                 # This creates natural, flowing movement
-                self.phase += 0.12  # Slower phase increment for relaxed, laid-back movement
+                self.phase += 0.15  # Moderate phase increment for expressive but relaxed movement
 
                 # Head pan: slow side-to-side sway (like looking around gently)
-                pan_offset = math.sin(self.phase * 0.6) * self.head_pan_range * 0.7
+                pan_offset = math.sin(self.phase * 0.65) * self.head_pan_range * 0.8
                 target_pan = self.base_pan + pan_offset
 
                 # Head tilt: gentle up-down motion (like breathing/thinking)
-                tilt_offset = math.sin(self.phase * 0.8) * self.head_tilt_range * 0.6
+                tilt_offset = math.sin(self.phase * 0.85) * self.head_tilt_range * 0.75
                 target_tilt = self.base_tilt + tilt_offset
 
                 # Front wheels: subtle rocking (like shifting weight)
-                wheel_offset = math.sin(self.phase * 0.4) * self.wheel_angle_range * 0.75
+                wheel_offset = math.sin(self.phase * 0.5) * self.wheel_angle_range * 0.85
                 target_wheel = self.base_wheel_angle + wheel_offset
 
                 # Check stop signal before servo movements
@@ -165,12 +165,21 @@ class SpeechIdleAnimator:
                 try:
                     if hasattr(car, 'set_cam_pan_angle'):
                         car.set_cam_pan_angle(target_pan, smooth=True)
+                        if int(self.phase) % 20 == 0:  # Log every 20 cycles
+                            logger.info(f"🎬 Animation active: pan={target_pan:.1f}°")
+                    else:
+                        logger.warning("Car has no set_cam_pan_angle method!")
 
                     if hasattr(car, 'set_cam_tilt_angle'):
                         car.set_cam_tilt_angle(target_tilt, smooth=True)
+                    else:
+                        logger.warning("Car has no set_cam_tilt_angle method!")
 
                     if hasattr(car, 'set_dir_servo_angle'):
                         car.set_dir_servo_angle(target_wheel, smooth=True)
+                    else:
+                        logger.warning("Car has no set_dir_servo_angle method!")
+
                 except Exception as servo_error:
                     logger.debug(f"Servo command error (normal during stop): {servo_error}")
                     # If servo commands fail, animation is likely stopping - exit gracefully
@@ -181,8 +190,8 @@ class SpeechIdleAnimator:
                     break
 
                 # Add occasional micro-adjustments to back wheels for realism
-                # Less frequent weight shifting for laid-back vibe
-                if random.random() < 0.05:  # 5% chance each iteration (~every 6 seconds)
+                # More frequent weight shifting for expressive vibe
+                if random.random() < 0.07:  # 7% chance each iteration (~every 4 seconds)
                     # Check stop before weight shift
                     if not self.stop_event.is_set() and self.is_animating:
                         self._subtle_weight_shift(car)
@@ -211,9 +220,9 @@ class SpeechIdleAnimator:
         This makes Nevil appear more alive/present.
         """
         try:
-            # Very gentle motor pulse for laid-back, relaxed vibe
-            pulse_strength = random.choice([6, -6, 8, -8])  # Very low power
-            duration = 0.05  # 50ms pulse
+            # Gentle motor pulse for expressive but smooth vibe
+            pulse_strength = random.choice([8, -8, 10, -10, 12, -12])  # Low-medium power
+            duration = 0.06  # 60ms pulse
 
             if hasattr(car, 'set_motor_speed'):
                 # Pulse both motors in same direction for weight shift
@@ -260,7 +269,7 @@ class SpeechIdleAnimator:
         intensity_map = {
             "subtle": (5, 3, 2),       # (pan_range, tilt_range, wheel_range)
             "medium": (8, 5, 4),       # Balanced
-            "expressive": (12, 7, 6),  # More animated (slightly reduced for laid-back vibe)
+            "expressive": (15, 9, 8),  # More animated and expressive
         }
 
         if intensity.lower() in intensity_map:

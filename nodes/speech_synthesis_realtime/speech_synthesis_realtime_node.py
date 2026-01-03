@@ -34,6 +34,7 @@ from dotenv import load_dotenv
 
 from nevil_framework.base_node import NevilNode
 from nevil_framework.chat_logger import get_chat_logger
+from nevil_framework.gesture_injector import get_gesture_injector
 
 # Load environment variables
 load_dotenv()
@@ -358,6 +359,31 @@ class SpeechSynthesisNode22(NevilNode):
                     input_text=transcript[:200] if transcript else "<streaming_audio>",
                     metadata=tts_metadata
                 ) as tts_log:
+
+                    # 🎭 GESTURE INJECTION: Inject gestures simultaneously with speech
+                    # This runs when audio is ready to play, leveraging independent node architecture
+                    if transcript:
+                        try:
+                            injector = get_gesture_injector()
+                            auto_gestures = injector.analyze_and_inject(
+                                transcript,
+                                min_gestures=3,
+                                max_gestures=6
+                            )
+
+                            if auto_gestures:
+                                self.logger.info(f"🎭 Injecting {len(auto_gestures)} gestures: {auto_gestures}")
+                                self.publish("robot_action", {
+                                    "actions": auto_gestures,
+                                    "source_text": transcript[:50],
+                                    "mood": "neutral",
+                                    "priority": 100,
+                                    "timestamp": time.time()
+                                })
+                            else:
+                                self.logger.info("🎭 No gestures generated for this response")
+                        except Exception as e:
+                            self.logger.error(f"❌ Gesture injection failed: {e}")
 
                     playback_start = time.time()
 

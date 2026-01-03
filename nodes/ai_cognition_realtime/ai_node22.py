@@ -27,6 +27,7 @@ from typing import Optional, Dict, Any, List
 from nevil_framework.base_node import NevilNode
 from nevil_framework.chat_logger import get_chat_logger
 from nevil_framework.youtube_library import YouTubeLibrary
+from nevil_framework.gesture_injector import get_gesture_injector
 from nevil_framework.realtime.realtime_connection_manager import (
     RealtimeConnectionManager,
     ConnectionConfig,
@@ -93,6 +94,8 @@ class AiNode22(NevilNode):
         self.current_conversation_id = None
         self.response_in_progress = False  # Track if API is generating a response
         self.response_start_time = None  # Track when response started (for timeout safety)
+        self.gesture_count_in_response = 0  # Count how many times GPT called perform_gesture
+        self.last_response_text = ""  # Store last response for gesture injection
 
         # Visual data storage
         self.latest_image: Optional[Dict[str, Any]] = None
@@ -390,6 +393,7 @@ class AiNode22(NevilNode):
         try:
             delta = event.get('delta', '')
             self.current_response_text += delta
+            self.last_response_text += delta  # Store for gesture injection
 
             # Log partial response for debugging
             if len(self.current_response_text) % 50 == 0:
@@ -695,6 +699,7 @@ class AiNode22(NevilNode):
 
             # Handle gesture performance (new single function)
             if function_name == "perform_gesture":
+                self.gesture_count_in_response += 1  # Increment gesture counter
                 return self._handle_perform_gesture(args)
 
             # Handle sound effects
@@ -994,6 +999,40 @@ class AiNode22(NevilNode):
         """Handle complete response"""
         try:
             self.logger.info(f"✅✅✅ response.done EVENT RECEIVED: {event}")
+
+            # 🎭 ADDITIVE GESTURE INJECTION: Top up to minimum gesture count
+            MIN_GESTURES = 3
+            MAX_ADDITIONAL = 6
+
+            if self.last_response_text:
+                gestures_needed = MIN_GESTURES - self.gesture_count_in_response
+
+                if gestures_needed > 0:
+                    self.logger.warning(f"⚠️  GPT only called perform_gesture {self.gesture_count_in_response} times! Need {gestures_needed} more to reach minimum {MIN_GESTURES}")
+                    injector = get_gesture_injector()
+                    # Inject just enough to reach minimum, or up to MAX_ADDITIONAL
+                    auto_gestures = injector.analyze_and_inject(
+                        self.last_response_text,
+                        min_gestures=gestures_needed,
+                        max_gestures=min(gestures_needed + 3, MAX_ADDITIONAL)
+                    )
+
+                    if auto_gestures:
+                        self.logger.info(f"🎭 TOP-UP INJECTING {len(auto_gestures)} gestures: {auto_gestures}")
+                        # Publish gestures immediately
+                        self.publish("robot_action", {
+                            "actions": auto_gestures,
+                            "source_text": "auto_inject",
+                            "mood": "neutral",
+                            "priority": 100,
+                            "timestamp": time.time()
+                        })
+                else:
+                    self.logger.info(f"✅ GPT called perform_gesture {self.gesture_count_in_response} times - sufficient gestures!")
+
+            # Reset gesture tracking for next response
+            self.gesture_count_in_response = 0
+            self.last_response_text = ""
 
             # Clear response in progress flag
             # ⚠️ CRITICAL: Clear flag on connection_manager so audio_capture knows we're ready

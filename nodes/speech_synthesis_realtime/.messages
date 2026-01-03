@@ -57,6 +57,32 @@ publishes:
         min: 0.0
         max: 1.0
 
+  - topic: "robot_action"
+    message_type: "RobotAction"
+    description: "Gesture actions synchronized with speech"
+    frequency: "on_speech"
+    schema:
+      actions:
+        type: "array"
+        required: true
+        description: "List of gesture actions to perform"
+      source_text:
+        type: "string"
+        required: false
+        description: "Text that triggered the gestures"
+      mood:
+        type: "string"
+        required: false
+        description: "Mood context for gestures"
+      priority:
+        type: "integer"
+        required: false
+        description: "Action priority"
+      timestamp:
+        type: "float"
+        required: true
+        description: "Unix timestamp"
+
 # Topics this node subscribes to
 subscribes:
   - topic: "text_response"

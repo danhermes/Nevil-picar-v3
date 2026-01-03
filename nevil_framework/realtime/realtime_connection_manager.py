@@ -646,6 +646,17 @@ class RealtimeConnectionManager:
     async def update_session(self, config: SessionConfig) -> None:
         """Update session configuration"""
         self.session_config = config
+
+        # CRITICAL: Log tools to verify they're being sent
+        if config.tools:
+            logger.info(f"📤 Sending session.update with {len(config.tools)} tools:")
+            for tool in config.tools:
+                logger.info(f"   - Tool: {tool.get('name', 'unnamed')}")
+        else:
+            logger.warning("⚠️  session.update has NO tools!")
+
+        logger.info(f"📤 tool_choice: {config.tool_choice}, temperature: {config.temperature}")
+
         await self.send({
             'type': 'session.update',
             'session': {
